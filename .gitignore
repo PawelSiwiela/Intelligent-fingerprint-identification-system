@@ -49,7 +49,6 @@ output/
 
 # Zachowaj strukturę folderów (puste .gitkeep)
 # =========================================================================
-!output/
 !output/.gitkeep
 !output/logs/.gitkeep
 !output/models/.gitkeep
