@@ -1,9 +1,9 @@
-% filepath: src/image/preprocessing/hybridPreprocessing.m
-function processedImage = hybridPreprocessing(image, logFile)
+function processedImage = hybridPreprocessing(image, logFile, showVisualization)
 % HYBRIDPREPROCESSING Hybrydowy preprocessing (Basic + Gabor)
 
 try
     if nargin < 2, logFile = []; end
+    if nargin < 3, showVisualization = false; end
     
     % Walidacja obrazu
     if size(image, 3) == 3
@@ -14,8 +14,8 @@ try
     end
     
     logInfo('  Hybrid: Running BASIC preprocessing...', logFile);
-    % ETAP 1: Uruchom BASIC preprocessing
-    basicResult = basicPreprocessing(image, logFile);
+    % ETAP 1: Uruchom BASIC preprocessing (bez wizualizacji tutaj)
+    basicResult = basicPreprocessing(image, logFile, false);
     
     logInfo('  Hybrid: Running GABOR preprocessing...', logFile);
     % ETAP 2: Spróbuj GABOR preprocessing (używając funkcji z shared/)
@@ -44,6 +44,12 @@ try
     catch gaborError
         logWarning(sprintf('Gabor preprocessing failed: %s. Using BASIC only.', gaborError.message), logFile);
         processedImage = basicResult;
+    end
+    
+    % Na końcu - opcjonalna wizualizacja
+    if showVisualization
+        logInfo('  Hybrid: Generating visualization...', logFile);
+        visualizeMethodSteps(image, 'hybrid', logFile);
     end
     
 catch ME

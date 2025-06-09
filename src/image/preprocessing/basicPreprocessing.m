@@ -1,4 +1,4 @@
-function processedImage = basicPreprocessing(image, logFile)
+function processedImage = basicPreprocessing(image, logFile, showVisualization)
 % BASICPREPROCESSING Podstawowy preprocessing odcisku palca
 %
 % Input:
@@ -10,6 +10,7 @@ function processedImage = basicPreprocessing(image, logFile)
 
 try
     if nargin < 2, logFile = []; end
+    if nargin < 3, showVisualization = false; end
     
     % Walidacja obrazu
     if size(image, 3) == 3
@@ -58,6 +59,12 @@ try
     % KROK 6: Finalne czyszczenie
     processedImage = bwareaopen(processedImage, 30); % Usuń małe obiekty
     processedImage = bwmorph(processedImage, 'clean'); % Usuń izolowane piksele
+    
+    % Na końcu - opcjonalna wizualizacja
+    if showVisualization
+        logInfo('    Basic: Generating visualization...', logFile);
+        visualizeMethodSteps(image, 'basic', logFile);
+    end
     
 catch ME
     if ~isempty(logFile)

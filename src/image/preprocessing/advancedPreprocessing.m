@@ -1,16 +1,17 @@
-% filepath: src/image/preprocessing/advancedPreprocessing.m
-function processedImage = advancedPreprocessing(image, logFile)
+function processedImage = advancedPreprocessing(image, logFile, showVisualization)
 % ADVANCEDPREPROCESSING Zaawansowany preprocessing dla odcisków palców
 %
 % Input:
 %   image - obraz wejściowy
 %   logFile - plik do logowania (opcjonalny)
+%   showVisualization - czy pokazać wizualizację kroków (opcjonalny)
 %
 % Output:
 %   processedImage - przetworzony obraz binarny
 
 try
     if nargin < 2, logFile = []; end
+    if nargin < 3, showVisualization = false; end
     
     % Walidacja obrazu
     if size(image, 3) == 3
@@ -51,6 +52,12 @@ try
     logInfo('  Advanced: Final quality enhancement...', logFile);
     % KROK 8: Finalne ulepszenia jakości
     processedImage = finalQualityEnhancement(processedImage, mask);
+    
+    % Na końcu - opcjonalna wizualizacja
+    if showVisualization
+        logInfo('  Advanced: Generating visualization...', logFile);
+        visualizeMethodSteps(image, 'advanced', logFile);
+    end
     
 catch ME
     if ~isempty(logFile)
