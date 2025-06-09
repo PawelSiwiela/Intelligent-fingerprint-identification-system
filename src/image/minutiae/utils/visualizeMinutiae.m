@@ -1,8 +1,15 @@
 % filepath: src/image/minutiae/utils/visualizeMinutiae.m
-function visualizeMinutiae(binaryImage, minutiae, title_text)
+function visualizeMinutiae(binaryImage, minutiae, title_text, savePath)
 % VISUALIZEMINUTIAE Wizualizuje wszystkie typy minucji
+%
+% Input:
+%   binaryImage - obraz binarny
+%   minutiae - struktura z minucjami
+%   title_text - tytuł (opcjonalny)
+%   savePath - ścieżka do zapisu PNG (opcjonalna)
 
 if nargin < 3, title_text = 'Detected Minutiae'; end
+if nargin < 4, savePath = []; end
 
 figure('Position', [100, 100, 800, 600]);
 imshow(binaryImage); hold on;
@@ -49,4 +56,17 @@ title(sprintf('%s\nEndpoints: %d, Bifurcations: %d, Lakes: %d, Dots: %d (Total: 
 
 legend('Location', 'best');
 hold off;
+
+% ZAPISZ PNG jeśli podano ścieżkę
+if ~isempty(savePath)
+    % Upewnij się że katalog istnieje
+    saveDir = fileparts(savePath);
+    if ~exist(saveDir, 'dir')
+        mkdir(saveDir);
+    end
+    
+    % Zapisz w wysokiej rozdzielczości
+    print(gcf, savePath, '-dpng', '-r300');
+    fprintf('   💾 Zapisano wizualizację: %s\n', savePath);
+end
 end
