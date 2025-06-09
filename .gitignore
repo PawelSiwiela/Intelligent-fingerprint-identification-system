@@ -1,0 +1,62 @@
+# =========================================================================
+# FINGERPRINT IDENTIFICATION SYSTEM - .gitignore
+# =========================================================================
+
+# MATLAB podstawowe
+# =========================================================================
+# Windows default autosave extension
+*.asv
+# OSX / *nix default autosave extension
+*.m~
+# Compiled MEX binaries (all platforms)
+*.mex*
+# Packaged app and toolbox files
+*.mlappinstall
+*.mltbx
+# Generated helpsearch folders
+helpsearch*/
+# Simulink code generation folders
+slprj/
+sccprj/
+# Matlab code generation folders
+codegen/
+# Simulink autosave extension
+*.autosave
+# Simulink cache files
+*.slxc
+# Octave session info
+octave-workspace
+
+# System files
+# =========================================================================
+.DS_Store
+Thumbs.db
+# VS Code settings
+.vscode/settings.json
+.vscode/launch.json
+# MATLAB backups
+*~
+*.bak
+
+
+# Zbiór danych 
+# =========================================================================
+/data/
+
+# Cały folder output - wszystkie generowane pliki
+# =========================================================================
+output/
+
+# Zachowaj strukturę folderów (puste .gitkeep)
+# =========================================================================
+!output/.gitkeep
+!output/logs/.gitkeep
+!output/networks/.gitkeep
+!output/preprocessed/.gitkeep
+!output/visualizations/.gitkeep
+!output/results/.gitkeep
+!/data/.gitkeep
+
+# Ignoruj pliki PDF
+*.pdf
+*.docx
