@@ -16,8 +16,9 @@ config.logsPath = fullfile(projectDir, 'output', 'logs');
 config.figuresPath = fullfile(projectDir, 'output', 'figures');
 
 % Parametry danych
-config.imageFormat = 'png';  % Format obrazów do wczytania ('png' lub 'tiff')
-config.imageSize = [400, 400];  % Docelowy rozmiar obrazów
+config.imageFormat = 'png';              % Format obrazów do wczytania ('png' lub 'tiff')
+config.standardizeSize = false;          % Nie skaluj obrazów, używaj oryginalnych rozmiarów
+config.imageSize = [600, 600];           % Używane tylko jeśli standardizeSize = true
 
 % Ustawienie proporcji danych na dokładne liczby: 10 trening, 2 walidacja, 2 test
 config.samplesPerFinger = 14;

@@ -3,17 +3,6 @@ function [trainData, valData, testData] = splitData(images, labels, config, logF
 %   [trainData, valData, testData] = SPLITDATA(images, labels, config, logFile)
 %   dzieli zbiór obrazów odcisków palców na zbiory treningowy, walidacyjny i
 %   testowy zgodnie z podanymi w konfiguracji liczbami próbek.
-%
-%   Parametry:
-%     images - komórka zawierająca obrazy odcisków palców
-%     labels - wektor etykiet odpowiadających poszczególnym palcom
-%     config - struktura zawierająca parametry podziału danych
-%     logFile - opcjonalny plik dziennika do rejestrowania informacji
-%
-%   Wyjście:
-%     trainData - struktura zawierająca dane treningowe (images, labels)
-%     valData - struktura zawierająca dane walidacyjne (images, labels)
-%     testData - struktura zawierająca dane testowe (images, labels)
 
 % Czas rozpoczęcia
 ticStart = tic;
@@ -38,9 +27,6 @@ numSamples = length(images);
 % Liczba unikalnych klas (palców)
 uniqueLabels = unique(labels);
 numClasses = length(uniqueLabels);
-
-fprintf('  Przygotowanie podziału danych dla %d próbek z %d klas\n', ...
-    numSamples, numClasses);
 
 % Kontener na indeksy próbek dla każdego zbioru
 trainIdx = [];
@@ -87,20 +73,21 @@ end
 % Tworzenie struktur danych wyjściowych
 trainData.images = images(trainIdx);
 trainData.labels = labels(trainIdx);
+trainData.indices = trainIdx;  % Zapisanie indeksów
 
 valData.images = images(valIdx);
 valData.labels = labels(valIdx);
+valData.indices = valIdx;      % Zapisanie indeksów
 
 testData.images = images(testIdx);
 testData.labels = labels(testIdx);
+testData.indices = testIdx;    % Zapisanie indeksów
 
 % Wyświetlenie podsumowania
 timeElapsed = toc(ticStart);
-fprintf('  Podział danych: %d próbek treningowych, %d walidacyjnych, %d testowych (%.2f s)\n', ...
-    length(trainData.labels), length(valData.labels), length(testData.labels), timeElapsed);
 
 % Logowanie informacji o podziale danych, jeśli podano plik dziennika
-if nargin == 4 && ~isempty(logFile)
+if nargin >= 4 && ~isempty(logFile)
     logInfo(sprintf('  Podział danych: %d próbek treningowych, %d walidacyjnych, %d testowych', ...
         length(trainData.labels), length(valData.labels), length(testData.labels)), logFile);
 end

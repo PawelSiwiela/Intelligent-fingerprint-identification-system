@@ -22,10 +22,10 @@ try
     try
         % Użyj funkcji z shared/
         logInfo('    Hybrid: Computing ridge orientation...', logFile);
-        orientation = computeRidgeOrientation(image);
+        orientation = computeRidgeOrientation(image, 16);
         
         logInfo('    Hybrid: Computing ridge frequency...', logFile);
-        frequency = computeRidgeFrequency(image, orientation);
+        frequency = computeRidgeFrequency(image, orientation, 32);
         
         logInfo('    Hybrid: Applying Gabor filters...', logFile);
         gaborFiltered = applyGaborFilter(image, orientation, frequency);
