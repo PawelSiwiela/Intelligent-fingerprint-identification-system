@@ -49,14 +49,13 @@ output/
 
 # Zachowaj strukturę folderów (puste .gitkeep)
 # =========================================================================
+!output/
 !output/.gitkeep
 !output/logs/.gitkeep
-!output/networks/.gitkeep
-!output/preprocessed/.gitkeep
-!output/visualizations/.gitkeep
-!output/results/.gitkeep
+!output/models/.gitkeep
+!output/figures/.gitkeep
 !/data/.gitkeep
 
-# Ignoruj pliki PDF
+# Ignoruj pliki PDF i DOCX
 *.pdf
 *.docx
