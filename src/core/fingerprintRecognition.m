@@ -15,7 +15,7 @@ systemStart = tic;
 
 try
     % ======================================================================
-    % ETAP 1: PRZYGOTOWANIE DANYCH (jedyny dostępny etap)
+    % ETAP 1: PRZYGOTOWANIE DANYCH
     % ======================================================================
     logInfo('ETAP 1: Przygotowanie danych...', logFile);
     [trainData, valData, testData] = prepareData(config, logFile);
@@ -26,10 +26,21 @@ try
     end
     
     % ======================================================================
-    % ETAP 2: WIZUALIZACJE (jeśli wybrano)
+    % ETAP 2: EKSTRAKCJA MINUCJI
+    % ======================================================================
+    logInfo('ETAP 2: Ekstrakcja minucji...', logFile);
+    [trainMinutiae, valMinutiae, testMinutiae] = extractAllMinutiae(trainData, valData, testData, config, logFile);
+    
+    % Dodaj minucje do wyników
+    results.trainMinutiae = trainMinutiae;
+    results.valMinutiae = valMinutiae;
+    results.testMinutiae = testMinutiae;
+    
+    % ======================================================================
+    % ETAP 3: WIZUALIZACJE (jeśli wybrano) - OSTATNI ETAP
     % ======================================================================
     if isfield(config, 'saveFigures') && config.saveFigures
-        logInfo('ETAP 2: Generowanie wizualizacji...', logFile);
+        logInfo('ETAP 3: Generowanie kompletnych wizualizacji...', logFile);
         try
             % Utwórz folder na wizualizacje
             timestamp = datestr(now, 'yyyymmdd_HHMMSS');
@@ -39,13 +50,18 @@ try
                 logInfo(sprintf('Utworzono folder wizualizacji: %s', vizDir), logFile);
             end
             
-            % WYWOŁAJ ZEWNĘTRZNĄ FUNKCJĘ
-            generateSystemVisualizations(trainData, valData, testData, vizDir, logFile);
+            % PRZEKAŻ WSZYSTKIE DANE DO WIZUALIZACJI (dane + minucje)
+            minutiaeForViz = struct();
+            minutiaeForViz.trainMinutiae = trainMinutiae;
+            minutiaeForViz.valMinutiae = valMinutiae;
+            minutiaeForViz.testMinutiae = testMinutiae;
+            
+            generateSystemVisualizations(trainData, valData, testData, vizDir, logFile, minutiaeForViz);
             
             % Dodaj ścieżkę do wyników
             results.visualizations.outputDir = vizDir;
             
-            logSuccess('Wizualizacje wygenerowane pomyślnie!', logFile);
+            logSuccess('Kompletne wizualizacje wygenerowane pomyślnie!', logFile);
             fprintf('📊 Wizualizacje zapisane w: %s\n', vizDir);
             
         catch ME
@@ -56,7 +72,7 @@ try
     end
     
     % ======================================================================
-    % PODSUMOWANIE (tylko to co mamy)
+    % PODSUMOWANIE
     % ======================================================================
     totalTime = toc(systemStart);
     
@@ -74,7 +90,7 @@ try
     results.stats.testSamples = length(testData.labels);
     results.stats.totalSamples = results.stats.trainSamples + results.stats.valSamples + results.stats.testSamples;
     
-    logSuccess(sprintf('Przygotowanie danych ukończone w %.2f sekund!', totalTime), logFile);
+    logSuccess(sprintf('System ukończony w %.2f sekund!', totalTime), logFile);
     
     % Wyświetl podsumowanie
     fprintf('\n✅ SYSTEM UKOŃCZONY!\n');

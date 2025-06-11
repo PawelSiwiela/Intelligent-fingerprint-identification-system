@@ -1,18 +1,29 @@
-function generateSystemVisualizations(trainData, valData, testData, outputDir, logFile)
-% GENERATESYSTEMVISUALIZATIONS Generuje podstawowe wizualizacje systemu
+function generateSystemVisualizations(trainData, valData, testData, outputDir, logFile, minutiaeData)
+% GENERATESYSTEMVISUALIZATIONS Generuje kompletne wizualizacje systemu
+%
+% Input:
+%   trainData, valData, testData - dane z podziału
+%   outputDir - folder docelowy
+%   logFile - plik logów
+%   minutiaeData - struktura z minucjami (opcjonalne)
 
-% 1. Przykładowe obrazy z każdego zbioru
+if nargin < 6, minutiaeData = []; end
+
+% 1. Przykładowe obrazy z każdego zbioru (BEZ ZMIAN)
 showDatasetSamples(trainData, 'Training', outputDir);
 showDatasetSamples(valData, 'Validation', outputDir);
 showDatasetSamples(testData, 'Test', outputDir);
 
-% 2. PIPELINE DEMO - pokaż wszystkie kroki preprocessing
+% 2. Pipeline demo (BEZ ZMIAN)
 if ~isempty(trainData.images)
     logInfo('Generowanie kompletnego pipeline demo...', logFile);
-    
-    % Potrzebujemy oryginalnego obrazu - weźmy z loadImages
-    % Na razie użyjemy pierwszego dostępnego obrazu i przeprowadzimy przez pipeline
     createFullPipelineDemo(outputDir, logFile);
+end
+
+% 3. NOWE: Wizualizacje minucji (jeśli podano)
+if ~isempty(minutiaeData)
+    logInfo('Generowanie wizualizacji minucji...', logFile);
+    generateMinutiaeVisualizations(trainData, valData, testData, minutiaeData, outputDir, logFile);
 end
 
 logInfo('Wygenerowano wizualizacje systemowe', logFile);
@@ -237,4 +248,129 @@ function frequencyViz = visualizeFrequency(frequency)
 % Normalizuj częstotliwość do zakresu 0-1
 frequencyViz = frequency;
 frequencyViz = (frequencyViz - min(frequencyViz(:))) / (max(frequencyViz(:)) - min(frequencyViz(:)));
+end
+
+function generateMinutiaeVisualizations(trainData, valData, testData, minutiaeData, outputDir, logFile)
+% Generuje wizualizacje minucji dla wszystkich zbiorów
+
+datasets = {'Training', 'Validation', 'Test'};
+dataArrays = {trainData, valData, testData};
+minutiaeArrays = {minutiaeData.trainMinutiae, minutiaeData.valMinutiae, minutiaeData.testMinutiae};
+
+% NOWE: Generuj osobną figurę dla każdego palca
+createIndividualMinutiaeExamples(dataArrays, minutiaeArrays, outputDir, logFile);
+
+logInfo('Wizualizacje minucji wygenerowane', logFile);
+end
+
+function createIndividualMinutiaeExamples(dataArrays, minutiaeArrays, outputDir, logFile)
+% Tworzy 5 osobnych figur - po jednej dla każdego palca
+
+fingerNames = {'Kciuk', 'Wskazujący', 'Środkowy', 'Serdeczny', 'Mały'};
+
+for finger = 1:5
+    % Znajdź najlepszy przykład tego palca ze wszystkich zbiorów
+    bestExample = findBestMinutiaeExample(finger, dataArrays, minutiaeArrays);
+    
+    if isempty(bestExample)
+        logWarning(sprintf('Brak danych dla palca %d (%s)', finger, fingerNames{finger}), logFile);
+        continue;
+    end
+    
+    % Utwórz osobną figurę dla tego palca
+    createSingleFingerVisualization(finger, fingerNames{finger}, bestExample, outputDir);
+    
+    fprintf('  📊 Minucje dla palca %d (%s) zapisane\n', finger, fingerNames{finger});
+end
+end
+
+function bestExample = findBestMinutiaeExample(finger, dataArrays, minutiaeArrays)
+% Znajduje najlepszy przykład minucji dla danego palca
+
+bestExample = [];
+bestMinutiaeCount = 0;
+
+% Przejrzyj wszystkie zbiory (Training, Validation, Test)
+for d = 1:length(dataArrays)
+    data = dataArrays{d};
+    minutiae = minutiaeArrays{d};
+    
+    if isempty(data.images) || isempty(minutiae)
+        continue;
+    end
+    
+    % Znajdź wszystkie obrazy tego palca
+    fingerIndices = find(data.labels == finger);
+    
+    for i = 1:length(fingerIndices)
+        idx = fingerIndices(i);
+        imageMinutiae = minutiae{idx};
+        
+        % Policz minucje (jeśli istnieją)
+        if ~isempty(imageMinutiae) && ~isempty(imageMinutiae.all)
+            minutiaeCount = size(imageMinutiae.all, 1);
+            
+            % Wybierz przykład z rozsądną liczbą minucji
+            if minutiaeCount > 10 && minutiaeCount < 300 && minutiaeCount > bestMinutiaeCount  % Rozszerz zakres!
+                bestExample = struct();
+                bestExample.image = data.images{idx};
+                bestExample.minutiae = imageMinutiae;
+                bestExample.dataset = d;
+                bestMinutiaeCount = minutiaeCount;
+            end
+        end
+    end
+end
+end
+
+function createSingleFingerVisualization(finger, fingerName, example, outputDir)
+% Tworzy wizualizację dla pojedynczego palca
+
+if isempty(example)
+    return;
+end
+
+datasetNames = {'Training', 'Validation', 'Test'};
+datasetName = datasetNames{example.dataset};
+
+figure('Visible', 'off', 'Position', [0, 0, 800, 600]);
+
+% Pokaż obraz
+imshow(example.image, 'Border', 'tight');
+hold on;
+
+% Dodaj minucje
+if ~isempty(example.minutiae) && ~isempty(example.minutiae.all)
+    % Punkty końcowe (czerwone kółka)
+    if ~isempty(example.minutiae.endpoints)
+        endpoints = example.minutiae.endpoints;
+        plot(endpoints(:,1), endpoints(:,2), 'ro', 'MarkerSize', 10, 'LineWidth', 3, 'DisplayName', 'Punkty końcowe');
+    end
+    
+    % Rozwidlenia (niebieskie kwadraty)
+    if ~isempty(example.minutiae.bifurcations)
+        bifurcations = example.minutiae.bifurcations;
+        plot(bifurcations(:,1), bifurcations(:,2), 'bs', 'MarkerSize', 10, 'LineWidth', 3, 'DisplayName', 'Rozwidlenia');
+    end
+    
+    % Tytuł z informacjami
+    totalMinutiae = size(example.minutiae.all, 1);
+    endpointCount = size(example.minutiae.endpoints, 1);
+    bifurcationCount = size(example.minutiae.bifurcations, 1);
+    
+    title(sprintf('%s (Palec %d) - %s Dataset\nMinucje: %d (Końcówki: %d, Rozwidlenia: %d)', ...
+        fingerName, finger, datasetName, totalMinutiae, endpointCount, bifurcationCount), ...
+        'FontSize', 14, 'FontWeight', 'bold');
+    
+    % Legenda
+    legend('Location', 'southoutside', 'Orientation', 'horizontal');
+else
+    title(sprintf('%s (Palec %d) - Brak Minucji', fingerName, finger), ...
+        'FontSize', 14, 'FontWeight', 'bold');
+end
+
+% Zapisz
+savePath = fullfile(outputDir, sprintf('palec_%d_%s_minutiae.png', finger, lower(fingerName)));
+print(gcf, savePath, '-dpng', '-r300');
+close(gcf);
 end
