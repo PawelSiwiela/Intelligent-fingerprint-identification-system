@@ -39,7 +39,7 @@ try
                 logInfo(sprintf('Utworzono folder wizualizacji: %s', vizDir), logFile);
             end
             
-            % Generuj podstawowe wizualizacje
+            % WYWOŁAJ ZEWNĘTRZNĄ FUNKCJĘ
             generateSystemVisualizations(trainData, valData, testData, vizDir, logFile);
             
             % Dodaj ścieżkę do wyników
@@ -99,46 +99,4 @@ end
 closeLog(logFile, results.totalTime);
 end
 
-function generateSystemVisualizations(trainData, valData, testData, outputDir, logFile)
-% Generuje podstawowe wizualizacje systemu
-
-% 1. Przykładowe obrazy z każdego zbioru
-showDatasetSamples(trainData, 'Training', outputDir);
-showDatasetSamples(valData, 'Validation', outputDir);
-showDatasetSamples(testData, 'Test', outputDir);
-
-logInfo('Wygenerowano wizualizacje systemowe', logFile);
-end
-
-function showDatasetSamples(data, datasetName, outputDir)
-% Pokazuje przykładowe obrazy z danego zbioru
-
-if isempty(data.images), return; end
-
-figure('Visible', 'off', 'Position', [0, 0, 1000, 600]);
-
-% Pokaż po jednym przykładzie z każdego palca
-sampleCount = 0;
-for finger = 1:5
-    fingerIndices = find(data.labels == finger);
-    if ~isempty(fingerIndices)
-        sampleCount = sampleCount + 1;
-        subplot(2, 3, sampleCount);
-        
-        idx = fingerIndices(1);
-        imshow(data.images{idx});
-        
-        coverage = sum(data.images{idx}(:)) / numel(data.images{idx}) * 100;
-        title(sprintf('Palec %d\nPokrycie: %.1f%%', finger, coverage), ...
-            'FontSize', 12, 'FontWeight', 'bold');
-    end
-end
-
-sgtitle(sprintf('%s Dataset Samples (%d images)', datasetName, length(data.images)), ...
-    'FontSize', 16, 'FontWeight', 'bold');
-
-% Zapisz
-savePath = fullfile(outputDir, sprintf('%s_samples.png', lower(datasetName)));
-print(gcf, savePath, '-dpng', '-r150');
-close(gcf);
-end
+% USUŃ WSZYSTKIE FUNKCJE LOKALNE!
