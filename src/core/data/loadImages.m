@@ -123,5 +123,27 @@ fprintf('  Wczytano %d/%d obrazów odcisków palców w %.2f sekund\n', ...
 
 % Logowanie zakończenia
 logInfo(sprintf('  Wczytano %d/%d obrazów odcisków palców', loadedImages, totalImages), logFile);
+
+fprintf('\n=== DIAGNOZA ROZMIARÓW ===\n');
+for i = 1:min(10, length(images))
+    [h, w] = size(images{i});
+    fprintf('Obraz %d: %dx%d (palec %d)\n', i, h, w, labels(i));
+end
+
+% Policz rzeczywiste rozmiary
+allSizes = [];
+for i = 1:length(images)
+    [h, w] = size(images{i});
+    allSizes = [allSizes; h, w];
+end
+
+uniqueRealSizes = unique(allSizes, 'rows');
+fprintf('\nRZECZYWISTE UNIKALNE ROZMIARY:\n');
+for i = 1:size(uniqueRealSizes, 1)
+    realSize = uniqueRealSizes(i, :);
+    count = sum(all(allSizes == realSize, 2));
+    fprintf('  %dx%d: %d obrazów\n', realSize(1), realSize(2), count);
+end
+fprintf('===========================\n\n');
 end
 
