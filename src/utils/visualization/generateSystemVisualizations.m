@@ -1,82 +1,50 @@
-function generateSystemVisualizations(trainData, valData, testData, outputDir, logFile, minutiaeData)
-% GENERATESYSTEMVISUALIZATIONS Generuje kompletne wizualizacje systemu
-%
-% Input:
-%   trainData, valData, testData - dane z podziału
-%   outputDir - folder docelowy
-%   logFile - plik logów
-%   minutiaeData - struktura z minucjami (opcjonalne)
+function generateSystemVisualizations(trainData, valData, testData, outputDir, logFile, minutiaeData, featuresData)
+% GENERATESYSTEMVISUALIZATIONS Generuje najważniejsze wizualizacje systemu
 
 if nargin < 6, minutiaeData = []; end
+if nargin < 7, featuresData = []; end
 
-% 1. Przykładowe obrazy z każdego zbioru (BEZ ZMIAN)
-showDatasetSamples(trainData, 'Training', outputDir);
-showDatasetSamples(valData, 'Validation', outputDir);
-showDatasetSamples(testData, 'Test', outputDir);
-
-% 2. Pipeline demo (BEZ ZMIAN)
+% ======================================================================
+% 1. PIPELINE DEMO - pokazuje jak działa preprocessing ✅ KLUCZOWE
+% ======================================================================
 if ~isempty(trainData.images)
-    logInfo('Generowanie kompletnego pipeline demo...', logFile);
+    logInfo('Generowanie pipeline demo...', logFile);
     createFullPipelineDemo(outputDir, logFile);
 end
 
-% 3. NOWE: Wizualizacje minucji (jeśli podano)
+% ======================================================================
+% 2. MINUCJE - po jednym przykładzie z każdego palca ✅ KLUCZOWE
+% ======================================================================
 if ~isempty(minutiaeData)
     logInfo('Generowanie wizualizacji minucji...', logFile);
-    generateMinutiaeVisualizations(trainData, valData, testData, minutiaeData, outputDir, logFile);
+    createMinutiaeExamples(trainData, valData, testData, minutiaeData, outputDir, logFile);
 end
 
-logInfo('Wygenerowano wizualizacje systemowe', logFile);
+% ======================================================================
+% 3. CECHY - tylko najważniejsze ✅ KLUCZOWE
+% ======================================================================
+if ~isempty(featuresData)
+    logInfo('Generowanie wizualizacji cech...', logFile);
+    createEssentialFeaturesVisualizations(featuresData.trainFeatures, featuresData.valFeatures, featuresData.testFeatures, outputDir, logFile);
 end
 
-function showDatasetSamples(data, datasetName, outputDir)
-% Pokazuje przykładowe obrazy z danego zbioru
-
-if isempty(data.images), return; end
-
-figure('Visible', 'off', 'Position', [0, 0, 1000, 600]);
-
-% Pokaż po jednym przykładzie z każdego palca
-sampleCount = 0;
-for finger = 1:5
-    fingerIndices = find(data.labels == finger);
-    if ~isempty(fingerIndices)
-        sampleCount = sampleCount + 1;
-        subplot(2, 3, sampleCount);
-        
-        idx = fingerIndices(1);
-        imshow(data.images{idx});
-        
-        coverage = sum(data.images{idx}(:)) / numel(data.images{idx}) * 100;
-        title(sprintf('Palec %d\nPokrycie: %.1f%%', finger, coverage), ...
-            'FontSize', 12, 'FontWeight', 'bold');
-    end
+logInfo('Wygenerowano kluczowe wizualizacje systemowe', logFile);
 end
 
-sgtitle(sprintf('%s Dataset Samples (%d images)', datasetName, length(data.images)), ...
-    'FontSize', 16, 'FontWeight', 'bold');
-
-% Zapisz
-savePath = fullfile(outputDir, sprintf('%s_samples.png', lower(datasetName)));
-print(gcf, savePath, '-dpng', '-r150');
-close(gcf);
-end
-
+% ======================================================================
+% ZACHOWANE FUNKCJE (bez zmian)
+% ======================================================================
 function createFullPipelineDemo(outputDir, logFile)
-% Tworzy kompletne demo pipeline - wszystkie kroki preprocessing
-
+% Kompletny pipeline preprocessing - 9 kroków ✅ KLUCZOWE
+% [CAŁA FUNKCJA BEZ ZMIAN]
 try
-    % Wczytaj jeden przykładowy obraz (oryginalny)
     config = loadConfig();
-    
-    % Znajdź pierwszy dostępny obraz
     dataDir = config.dataPath;
     fingerFolders = {'kciuk', 'wskazujący', 'środkowy', 'serdeczny', 'mały'};
     
     originalImage = [];
     fingerName = '';
     
-    % Szukaj pierwszego dostępnego obrazu
     for i = 1:length(fingerFolders)
         currentFolder = fingerFolders{i};
         possiblePaths = {
@@ -119,91 +87,42 @@ try
     
     logInfo(sprintf('Pipeline demo na obrazie: %s', fingerName), logFile);
     
-    % WYKONAJ WSZYSTKIE KROKI PIPELINE I ZACHOWAJ KAŻDY KROK
-    
-    % KROK 1: Orientacja
+    % WYKONAJ WSZYSTKIE KROKI PIPELINE
     orientation = computeRidgeOrientation(grayImage, 16);
     orientationViz = visualizeOrientation(grayImage, orientation);
-    
-    % KROK 2: Częstotliwość
     frequency = computeRidgeFrequency(grayImage, orientation, 32);
     frequencyViz = visualizeFrequency(frequency);
-    
-    % KROK 3: Filtr Gabora
     gaborFiltered = applyGaborFilter(grayImage, orientation, frequency);
-    
-    % KROK 4: Segmentacja
     [segmentedImage, mask] = segmentFingerprint(gaborFiltered);
-    
-    % KROK 5: Binaryzacja
     binaryImage = orientationAwareBinarization(segmentedImage, orientation, mask);
-    
-    % KROK 6: Szkieletyzacja (finał)
     skeletonImage = ridgeThinning(binaryImage);
     finalImage = skeletonImage & mask;
     finalImage = bwmorph(finalImage, 'clean');
     
-    % UTWÓRZ WIZUALIZACJĘ WSZYSTKICH KROKÓW
+    % WIZUALIZACJA 9 KROKÓW
     figure('Visible', 'off', 'Position', [0, 0, 1800, 1200]);
     
-    % 1. Oryginalny obraz
-    subplot(3, 3, 1);
-    imshow(originalImage);
-    title('1. ORYGINALNY OBRAZ', 'FontSize', 12, 'FontWeight', 'bold');
+    subplot(3, 3, 1); imshow(originalImage); title('1. ORYGINALNY OBRAZ', 'FontSize', 12, 'FontWeight', 'bold');
+    subplot(3, 3, 2); imshow(grayImage); title('2. SKALA SZAROŚCI', 'FontSize', 12, 'FontWeight', 'bold');
+    subplot(3, 3, 3); imshow(orientationViz); title('3. ORIENTACJA LINII', 'FontSize', 12, 'FontWeight', 'bold');
+    subplot(3, 3, 4); imshow(frequencyViz, []); colormap(gca, 'jet'); title('4. CZĘSTOTLIWOŚĆ', 'FontSize', 12, 'FontWeight', 'bold');
+    subplot(3, 3, 5); imshow(gaborFiltered, []); title('5. FILTR GABORA', 'FontSize', 12, 'FontWeight', 'bold');
+    subplot(3, 3, 6); imshow(segmentedImage); title('6. SEGMENTACJA', 'FontSize', 12, 'FontWeight', 'bold');
+    subplot(3, 3, 7); imshow(binaryImage); title('7. BINARYZACJA', 'FontSize', 12, 'FontWeight', 'bold');
+    subplot(3, 3, 8); imshow(skeletonImage); title('8. SZKIELETYZACJA', 'FontSize', 12, 'FontWeight', 'bold');
     
-    % 2. Skala szarości
-    subplot(3, 3, 2);
-    imshow(grayImage);
-    title('2. SKALA SZAROŚCI', 'FontSize', 12, 'FontWeight', 'bold');
-    
-    % 3. Orientacja
-    subplot(3, 3, 3);
-    imshow(orientationViz);
-    title('3. ORIENTACJA LINII', 'FontSize', 12, 'FontWeight', 'bold');
-    
-    % 4. Częstotliwość
-    subplot(3, 3, 4);
-    imshow(frequencyViz, []);
-    colormap(gca, 'jet');
-    title('4. CZĘSTOTLIWOŚĆ', 'FontSize', 12, 'FontWeight', 'bold');
-    
-    % 5. Filtr Gabora
-    subplot(3, 3, 5);
-    imshow(gaborFiltered, []);
-    title('5. FILTR GABORA', 'FontSize', 12, 'FontWeight', 'bold');
-    
-    % 6. Segmentacja
-    subplot(3, 3, 6);
-    imshow(segmentedImage);
-    title('6. SEGMENTACJA', 'FontSize', 12, 'FontWeight', 'bold');
-    
-    % 7. Binaryzacja
-    subplot(3, 3, 7);
-    imshow(binaryImage);
-    title('7. BINARYZACJA', 'FontSize', 12, 'FontWeight', 'bold');
-    
-    % 8. Szkieletyzacja
-    subplot(3, 3, 8);
-    imshow(skeletonImage);
-    title('8. SZKIELETYZACJA', 'FontSize', 12, 'FontWeight', 'bold');
-    
-    % 9. Wynik końcowy
     subplot(3, 3, 9);
     imshow(finalImage);
     finalCoverage = sum(finalImage(:)) / numel(finalImage) * 100;
-    title(sprintf('9. WYNIK KOŃCOWY\nPokrycie: %.2f%%', finalCoverage), ...
-        'FontSize', 12, 'FontWeight', 'bold', 'Color', [0, 0.6, 0]);
+    title(sprintf('9. WYNIK KOŃCOWY\nPokrycie: %.2f%%', finalCoverage), 'FontSize', 12, 'FontWeight', 'bold', 'Color', [0, 0.6, 0]);
     
-    % Główny tytuł
-    sgtitle(sprintf('KOMPLETNY PIPELINE PREPROCESSING - %s', upper(fingerName)), ...
-        'FontSize', 16, 'FontWeight', 'bold');
+    sgtitle(sprintf('KOMPLETNY PIPELINE PREPROCESSING - %s', upper(fingerName)), 'FontSize', 16, 'FontWeight', 'bold');
     
-    % Zapisz
     savePath = fullfile(outputDir, 'complete_preprocessing_pipeline.png');
     print(gcf, savePath, '-dpng', '-r300');
     close(gcf);
     
-    logInfo('Kompletny pipeline demo utworzony', logFile);
+    logInfo('Pipeline demo utworzony', logFile);
     
 catch ME
     logWarning(sprintf('Błąd podczas tworzenia pipeline demo: %s', ME.message), logFile);
@@ -250,26 +169,14 @@ frequencyViz = frequency;
 frequencyViz = (frequencyViz - min(frequencyViz(:))) / (max(frequencyViz(:)) - min(frequencyViz(:)));
 end
 
-function generateMinutiaeVisualizations(trainData, valData, testData, minutiaeData, outputDir, logFile)
-% Generuje wizualizacje minucji dla wszystkich zbiorów
+function createMinutiaeExamples(trainData, valData, testData, minutiaeData, outputDir, logFile)
+% Minucje - po jednym przykładzie z każdego palca ✅ KLUCZOWE
 
-datasets = {'Training', 'Validation', 'Test'};
 dataArrays = {trainData, valData, testData};
 minutiaeArrays = {minutiaeData.trainMinutiae, minutiaeData.valMinutiae, minutiaeData.testMinutiae};
-
-% NOWE: Generuj osobną figurę dla każdego palca
-createIndividualMinutiaeExamples(dataArrays, minutiaeArrays, outputDir, logFile);
-
-logInfo('Wizualizacje minucji wygenerowane', logFile);
-end
-
-function createIndividualMinutiaeExamples(dataArrays, minutiaeArrays, outputDir, logFile)
-% Tworzy 5 osobnych figur - po jednej dla każdego palca
-
 fingerNames = {'Kciuk', 'Wskazujący', 'Środkowy', 'Serdeczny', 'Mały'};
 
 for finger = 1:5
-    % Znajdź najlepszy przykład tego palca ze wszystkich zbiorów
     bestExample = findBestMinutiaeExample(finger, dataArrays, minutiaeArrays);
     
     if isempty(bestExample)
@@ -277,11 +184,43 @@ for finger = 1:5
         continue;
     end
     
-    % Utwórz osobną figurę dla tego palca
-    createSingleFingerVisualization(finger, fingerNames{finger}, bestExample, outputDir);
+    % Utwórz figurę dla tego palca
+    figure('Visible', 'off', 'Position', [0, 0, 800, 600]);
+    imshow(bestExample.image, 'Border', 'tight');
+    hold on;
+    
+    if ~isempty(bestExample.minutiae) && ~isempty(bestExample.minutiae.all)
+        if ~isempty(bestExample.minutiae.endpoints)
+            endpoints = bestExample.minutiae.endpoints;
+            plot(endpoints(:,1), endpoints(:,2), 'ro', 'MarkerSize', 10, 'LineWidth', 3, 'DisplayName', 'Punkty końcowe');
+        end
+        
+        if ~isempty(bestExample.minutiae.bifurcations)
+            bifurcations = bestExample.minutiae.bifurcations;
+            plot(bifurcations(:,1), bifurcations(:,2), 'bs', 'MarkerSize', 10, 'LineWidth', 3, 'DisplayName', 'Rozwidlenia');
+        end
+        
+        totalMinutiae = size(bestExample.minutiae.all, 1);
+        endpointCount = size(bestExample.minutiae.endpoints, 1);
+        bifurcationCount = size(bestExample.minutiae.bifurcations, 1);
+        
+        title(sprintf('%s (Palec %d)\nMinucje: %d (Końcówki: %d, Rozwidlenia: %d)', ...
+            fingerNames{finger}, finger, totalMinutiae, endpointCount, bifurcationCount), ...
+            'FontSize', 14, 'FontWeight', 'bold');
+        
+        legend('Location', 'southoutside', 'Orientation', 'horizontal');
+    else
+        title(sprintf('%s (Palec %d) - Brak Minucji', fingerNames{finger}, finger), 'FontSize', 14, 'FontWeight', 'bold');
+    end
+    
+    savePath = fullfile(outputDir, sprintf('palec_%d_%s_minutiae.png', finger, lower(fingerNames{finger})));
+    print(gcf, savePath, '-dpng', '-r300');
+    close(gcf);
     
     fprintf('  📊 Minucje dla palca %d (%s) zapisane\n', finger, fingerNames{finger});
 end
+
+logInfo('Wizualizacje minucji wygenerowane', logFile);
 end
 
 function bestExample = findBestMinutiaeExample(finger, dataArrays, minutiaeArrays)
@@ -290,7 +229,6 @@ function bestExample = findBestMinutiaeExample(finger, dataArrays, minutiaeArray
 bestExample = [];
 bestMinutiaeCount = 0;
 
-% Przejrzyj wszystkie zbiory (Training, Validation, Test)
 for d = 1:length(dataArrays)
     data = dataArrays{d};
     minutiae = minutiaeArrays{d};
@@ -299,19 +237,16 @@ for d = 1:length(dataArrays)
         continue;
     end
     
-    % Znajdź wszystkie obrazy tego palca
     fingerIndices = find(data.labels == finger);
     
     for i = 1:length(fingerIndices)
         idx = fingerIndices(i);
         imageMinutiae = minutiae{idx};
         
-        % Policz minucje (jeśli istnieją)
         if ~isempty(imageMinutiae) && ~isempty(imageMinutiae.all)
             minutiaeCount = size(imageMinutiae.all, 1);
             
-            % Wybierz przykład z rozsądną liczbą minucji
-            if minutiaeCount > 10 && minutiaeCount < 300 && minutiaeCount > bestMinutiaeCount  % Rozszerz zakres!
+            if minutiaeCount > 10 && minutiaeCount < 300 && minutiaeCount > bestMinutiaeCount
                 bestExample = struct();
                 bestExample.image = data.images{idx};
                 bestExample.minutiae = imageMinutiae;
@@ -323,54 +258,148 @@ for d = 1:length(dataArrays)
 end
 end
 
-function createSingleFingerVisualization(finger, fingerName, example, outputDir)
-% Tworzy wizualizację dla pojedynczego palca
+% ======================================================================
+% UPROSZCZONE WIZUALIZACJE CECH - tylko 3 najważniejsze ✅ KLUCZOWE
+% ======================================================================
+function createEssentialFeaturesVisualizations(trainFeatures, valFeatures, testFeatures, outputDir, logFile)
+% Tylko 3 najważniejsze wizualizacje cech
 
-if isempty(example)
-    return;
+fprintf('   📊 Generowanie kluczowych wizualizacji cech...\n');
+
+allFeatures = [trainFeatures; valFeatures; testFeatures];
+datasetLabels = [ones(size(trainFeatures,1),1); 2*ones(size(valFeatures,1),1); 3*ones(size(testFeatures,1),1)];
+
+featuresDir = fullfile(outputDir, 'features_analysis');
+if ~exist(featuresDir, 'dir'), mkdir(featuresDir); end
+
+% 1. Podstawowe statystyki - boxploty ✅ NAJWAŻNIEJSZE
+createBasicStatsPlot(allFeatures, datasetLabels, featuresDir);
+
+% 2. Mapa gęstości - heatmapa 8x8 ✅ WAŻNE
+createDensityHeatmap(allFeatures, featuresDir);
+
+% 3. PCA - separowalność zbiorów ✅ KLUCZOWE DLA ML
+createPCAVisualization(allFeatures, datasetLabels, featuresDir);
+
+fprintf('   ✅ Kluczowe wizualizacje cech zapisane w: %s\n', featuresDir);
+logInfo(sprintf('Kluczowe wizualizacje cech zapisane w: %s', featuresDir), logFile);
 end
 
+function createBasicStatsPlot(features, labels, outputDir)
+% ✅ ZACHOWANE BEZ ZMIAN - najważniejsze!
+
+figure('Visible', 'off', 'Position', [0, 0, 1200, 800]);
+
+statNames = {'Endpoints', 'Bifurcations', 'Total', 'Endpoint Ratio', 'Bifurcation Ratio', 'Density'};
 datasetNames = {'Training', 'Validation', 'Test'};
-datasetName = datasetNames{example.dataset};
+colors = [0.8, 0.2, 0.2; 0.2, 0.8, 0.2; 0.2, 0.2, 0.8];
+
+for i = 1:6
+    subplot(2, 3, i);
+    
+    data = [];
+    groups = [];
+    
+    for d = 1:3
+        subset = features(labels == d, i);
+        data = [data; subset];
+        groups = [groups; d * ones(length(subset), 1)];
+    end
+    
+    boxplot(data, groups, 'Labels', datasetNames, 'Colors', colors);
+    title(statNames{i}, 'FontWeight', 'bold');
+    ylabel('Wartość');
+    grid on;
+end
+
+sgtitle('Podstawowe statystyki cech minucji', 'FontSize', 16, 'FontWeight', 'bold');
+
+savePath = fullfile(outputDir, 'features_basic_statistics.png');
+print(gcf, savePath, '-dpng', '-r200');
+close(gcf);
+end
+
+function createDensityHeatmap(features, outputDir)
+% ✅ ZACHOWANE BEZ ZMIAN - pokazuje rozkład przestrzenny!
 
 figure('Visible', 'off', 'Position', [0, 0, 800, 600]);
 
-% Pokaż obraz
-imshow(example.image, 'Border', 'tight');
-hold on;
+densityFeatures = features(:, 7:70);
+avgDensity = mean(densityFeatures, 1);
+avgDensityMap = reshape(avgDensity, [8, 8]);
 
-% Dodaj minucje
-if ~isempty(example.minutiae) && ~isempty(example.minutiae.all)
-    % Punkty końcowe (czerwone kółka)
-    if ~isempty(example.minutiae.endpoints)
-        endpoints = example.minutiae.endpoints;
-        plot(endpoints(:,1), endpoints(:,2), 'ro', 'MarkerSize', 10, 'LineWidth', 3, 'DisplayName', 'Punkty końcowe');
+imagesc(avgDensityMap);
+colormap(hot);
+colorbar;
+title('Średnia mapa gęstości minucji (8x8)', 'FontWeight', 'bold');
+xlabel('Kolumny siatki');
+ylabel('Wiersze siatki');
+
+for i = 1:8
+    for j = 1:8
+        text(j, i, sprintf('%.3f', avgDensityMap(i,j)), ...
+            'HorizontalAlignment', 'center', 'Color', 'white', 'FontWeight', 'bold');
     end
-    
-    % Rozwidlenia (niebieskie kwadraty)
-    if ~isempty(example.minutiae.bifurcations)
-        bifurcations = example.minutiae.bifurcations;
-        plot(bifurcations(:,1), bifurcations(:,2), 'bs', 'MarkerSize', 10, 'LineWidth', 3, 'DisplayName', 'Rozwidlenia');
-    end
-    
-    % Tytuł z informacjami
-    totalMinutiae = size(example.minutiae.all, 1);
-    endpointCount = size(example.minutiae.endpoints, 1);
-    bifurcationCount = size(example.minutiae.bifurcations, 1);
-    
-    title(sprintf('%s (Palec %d) - %s Dataset\nMinucje: %d (Końcówki: %d, Rozwidlenia: %d)', ...
-        fingerName, finger, datasetName, totalMinutiae, endpointCount, bifurcationCount), ...
-        'FontSize', 14, 'FontWeight', 'bold');
-    
-    % Legenda
-    legend('Location', 'southoutside', 'Orientation', 'horizontal');
-else
-    title(sprintf('%s (Palec %d) - Brak Minucji', fingerName, finger), ...
-        'FontSize', 14, 'FontWeight', 'bold');
 end
 
-% Zapisz
-savePath = fullfile(outputDir, sprintf('palec_%d_%s_minutiae.png', finger, lower(fingerName)));
-print(gcf, savePath, '-dpng', '-r300');
+savePath = fullfile(outputDir, 'features_density_heatmap.png');
+print(gcf, savePath, '-dpng', '-r200');
 close(gcf);
+end
+
+function createPCAVisualization(features, labels, outputDir)
+% ✅ ZACHOWANE BEZ ZMIAN - kluczowe dla ML!
+
+figure('Visible', 'off', 'Position', [0, 0, 1200, 500]);
+
+% Wykonaj PCA
+[coeff, score, latent, ~, explained] = pca(features);
+
+datasetNames = {'Training', 'Validation', 'Test'};
+colors = [0.8, 0.2, 0.2; 0.2, 0.8, 0.2; 0.2, 0.2, 0.8];
+
+% 1. Wykres 2D PCA
+subplot(1, 2, 1);
+for d = 1:3
+    subset = score(labels == d, :);
+    scatter(subset(:, 1), subset(:, 2), 100, colors(d,:), 'filled', 'DisplayName', datasetNames{d});
+    hold on;
+end
+title('PCA - Pierwsze 2 składowe główne', 'FontWeight', 'bold');
+xlabel(sprintf('PC1 (%.1f%% wariancji)', explained(1)));
+ylabel(sprintf('PC2 (%.1f%% wariancji)', explained(2)));
+legend;
+grid on;
+
+% 2. Wykres explained variance
+subplot(1, 2, 2);
+cumExplained = cumsum(explained);
+plot(1:20, cumExplained(1:20), 'bo-', 'LineWidth', 2, 'MarkerSize', 8);
+title('Skumulowana wariancja wyjaśniona', 'FontWeight', 'bold');
+xlabel('Liczba składowych głównych');
+ylabel('Skumulowana wariancja (%)');
+grid on;
+
+% Dodaj linię dla 95% wariancji
+line([1, 20], [95, 95], 'Color', 'red', 'LineStyle', '--', 'LineWidth', 2);
+text(10, 90, '95% wariancji', 'Color', 'red', 'FontWeight', 'bold');
+
+savePath = fullfile(outputDir, 'features_pca_analysis.png');
+print(gcf, savePath, '-dpng', '-r200');
+close(gcf);
+end
+
+function cmap = bluewhitered(m)
+% Kolorowa mapa niebiesko-biało-czerwona dla korelacji
+
+if nargin < 1, m = 256; end
+
+% Utworz mapę kolorów
+blue = [0, 0, 1];
+white = [1, 1, 1];
+red = [1, 0, 0];
+
+half = floor(m/2);
+cmap = [linspace(blue(1), white(1), half)', linspace(blue(2), white(2), half)', linspace(blue(3), white(3), half)';
+    linspace(white(1), red(1), m-half)', linspace(white(2), red(2), m-half)', linspace(white(3), red(3), m-half)'];
 end

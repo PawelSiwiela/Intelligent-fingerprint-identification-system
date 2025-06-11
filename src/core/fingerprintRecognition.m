@@ -37,10 +37,31 @@ try
     results.testMinutiae = testMinutiae;
     
     % ======================================================================
-    % ETAP 3: WIZUALIZACJE (jeśli wybrano) - OSTATNI ETAP
+    % ETAP 3: EKSTRAKCJA CECH Z MINUCJI
+    % ======================================================================
+    logInfo('ETAP 3: Ekstrakcja cech z minucji...', logFile);
+    [trainFeatures, valFeatures, testFeatures] = extractMinutiaeFeatures(trainMinutiae, valMinutiae, testMinutiae, config, logFile);
+    
+    % Dodaj cechy do wyników
+    results.trainFeatures = trainFeatures;
+    results.valFeatures = valFeatures;
+    results.testFeatures = testFeatures;
+    
+    % ======================================================================
+    % ETAP 3.5: WERYFIKACJA EKSTRAKCJI CECH
+    % ======================================================================
+    try
+        verifyFeatureExtraction(trainFeatures, valFeatures, testFeatures, trainMinutiae, valMinutiae, testMinutiae);
+        
+    catch ME
+        logWarning(sprintf('Błąd weryfikacji cech: %s', ME.message), logFile);
+    end
+    
+    % ======================================================================
+    % ETAP 4: WIZUALIZACJE (jeśli wybrano) - WSZYSTKIE W JEDNYM MIEJSCU
     % ======================================================================
     if isfield(config, 'saveFigures') && config.saveFigures
-        logInfo('ETAP 3: Generowanie kompletnych wizualizacji...', logFile);
+        logInfo('ETAP 4: Generowanie kompletnych wizualizacji...', logFile);
         try
             % Utwórz folder na wizualizacje
             timestamp = datestr(now, 'yyyymmdd_HHMMSS');
@@ -50,13 +71,18 @@ try
                 logInfo(sprintf('Utworzono folder wizualizacji: %s', vizDir), logFile);
             end
             
-            % PRZEKAŻ WSZYSTKIE DANE DO WIZUALIZACJI (dane + minucje)
+            % PRZEKAŻ WSZYSTKIE DANE DO WIZUALIZACJI (dane + minucje + cechy)
             minutiaeForViz = struct();
             minutiaeForViz.trainMinutiae = trainMinutiae;
             minutiaeForViz.valMinutiae = valMinutiae;
             minutiaeForViz.testMinutiae = testMinutiae;
             
-            generateSystemVisualizations(trainData, valData, testData, vizDir, logFile, minutiaeForViz);
+            featuresForViz = struct();
+            featuresForViz.trainFeatures = trainFeatures;
+            featuresForViz.valFeatures = valFeatures;
+            featuresForViz.testFeatures = testFeatures;
+            
+            generateSystemVisualizations(trainData, valData, testData, vizDir, logFile, minutiaeForViz, featuresForViz);
             
             % Dodaj ścieżkę do wyników
             results.visualizations.outputDir = vizDir;
