@@ -1,8 +1,5 @@
-% filepath: src/image/preprocessing/computeRidgeOrientation.m
 function orientation = computeRidgeOrientation(image, blockSize)
-% COMPUTERIDGEORIENTATION Oblicza orientację linii papilarnych
-%   orientation = COMPUTERIDGEORIENTATION(image, blockSize) oblicza lokalną
-%   orientację linii papilarnych w każdym bloku obrazu.
+% COMPUTERIDGEORIENTATION Oblicza orientację linii papilarnych - UPROSZCZONA
 
 [rows, cols] = size(image);
 orientation = zeros(rows, cols);
@@ -33,11 +30,11 @@ for i = blockSize:blockSize:rows-blockSize+1
         Gyy = sum(blockGy(:).^2);
         Gxy = sum(blockGx(:).*blockGy(:));
         
-        % Oblicz orientację (kąt główny)
-        if (Gxx + Gyy) > 0.01  % Sprawdź czy jest wystarczająca struktura
+        % Oblicz orientację (uproszczone)
+        if (Gxx + Gyy) > 0.01
             theta = 0.5 * atan2(2*Gxy, Gxx - Gyy);
         else
-            theta = 0;  % Brak wyraźnej orientacji
+            theta = 0;
         end
         
         % Przypisz orientację do całego bloku
@@ -45,19 +42,6 @@ for i = blockSize:blockSize:rows-blockSize+1
     end
 end
 
-% Wygładź orientację
-orientation = smoothOrientation(orientation, 3);
-end
-
-function smoothedOrientation = smoothOrientation(orientation, windowSize)
-% Wygładza pole orientacji używając filtru medianowego w przestrzeni kątowej
-% Konwertuj na reprezentację zespoloną
-complexOrient = exp(2i * orientation);
-
-% Zastosuj filtr medianowy
-realPart = medfilt2(real(complexOrient), [windowSize windowSize]);
-imagPart = medfilt2(imag(complexOrient), [windowSize windowSize]);
-
-% Konwertuj z powrotem na kąty
-smoothedOrientation = 0.5 * angle(complex(realPart, imagPart));
+% Podstawowe wygładzenie
+orientation = medfilt2(orientation, [3 3]);
 end

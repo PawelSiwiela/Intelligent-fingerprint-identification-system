@@ -16,37 +16,69 @@ function minutiae = detectMinutiae(binaryImage, logFile)
 try
     if nargin < 2, logFile = []; end
     
-    logInfo('    Detecting minutiae...', logFile);
+    % Walidacja wejścia
+    if isempty(binaryImage)
+        error('Input image is empty');
+    end
     
-    % KROK 1: Szkieletyzacja (cienkie linie 1-piksel)
+    % Konwersja do logicznego
+    if ~islogical(binaryImage)
+        binaryImage = binaryImage > 0.5;
+    end
+    
+    % Sprawdź pokrycie
+    whitePixels = sum(binaryImage(:));
+    totalPixels = numel(binaryImage);
+    coverage = whitePixels / totalPixels;
+    
+    logInfo(sprintf('    Binary image coverage: %.2f%% (%d white pixels)', coverage*100, whitePixels), logFile);
+    
+    if coverage < 0.01
+        logWarning('Binary image has very low coverage', logFile);
+    end
+    
+    logInfo('    Creating skeleton...', logFile);
+    
+    % KROK 1: Szkieletyzacja - PODSTAWA!
     skeleton = bwmorph(binaryImage, 'thin', inf);
-    skeleton = bwmorph(skeleton, 'clean'); % usuń artefakty
+    skeleton = bwmorph(skeleton, 'clean'); % usuń izolowane piksele
     
-    % KROK 2: Wykryj ZAKOŃCZENIA (endpoints)
-    endpoints_img = bwmorph(skeleton, 'endpoints');
+    % Sprawdź szkielet
+    skelPixels = sum(skeleton(:));
+    logInfo(sprintf('    Skeleton has %d pixels', skelPixels), logFile);
+    
+    if skelPixels == 0
+        logWarning('Skeleton is empty!', logFile);
+        skeleton = bwmorph(binaryImage, 'skel', inf);
+        skelPixels = sum(skeleton(:));
+    end
+    
+    % KROK 2: Wykryj ZAKOŃCZENIA na SZKIELECIE (nie na binaryImage!)
+    logInfo('    Detecting endpoints...', logFile);
+    endpoints_img = bwmorph(skeleton, 'endpoints');  % ✅ NA SZKIELECIE!
     [y_end, x_end] = find(endpoints_img);
     endpoints = [x_end, y_end];
     
-    % KROK 3: Wykryj ROZGAŁĘZIENIA (bifurcations)
-    bifurcations_img = bwmorph(skeleton, 'branchpoints');
+    logInfo(sprintf('    Found %d raw endpoints', size(endpoints, 1)), logFile);
+    
+    % KROK 3: Wykryj ROZGAŁĘZIENIA na SZKIELECIE
+    logInfo('    Detecting bifurcations...', logFile);
+    bifurcations_img = bwmorph(skeleton, 'branchpoints');  % ✅ NA SZKIELECIE!
     [y_bif, x_bif] = find(bifurcations_img);
     bifurcations = [x_bif, y_bif];
     
-    % KROK 4: Wykryj OCZKA (lakes) - zamknięte obszary
-    lakes = detectLakes(binaryImage);
+    logInfo(sprintf('    Found %d raw bifurcations', size(bifurcations, 1)), logFile);
     
-    % KROK 5: Wykryj KROPKI (dots) - izolowane piksele
-    dots = detectDots(skeleton);
-    
-    % KROK 6: Filtrowanie brzegów
+    % KROK 4: BARDZIEJ AGRESYWNE FILTROWANIE brzegów
     [h, w] = size(binaryImage);
-    margin = 15;
+    margin = 30; % ZWIĘKSZONE z 20 na 30
     
     % Filtruj zakończenia
     if ~isempty(endpoints)
         valid = endpoints(:,1) > margin & endpoints(:,1) < w-margin & ...
             endpoints(:,2) > margin & endpoints(:,2) < h-margin;
         endpoints = endpoints(valid, :);
+        logInfo(sprintf('    After border filtering: %d endpoints', size(endpoints, 1)), logFile);
     end
     
     % Filtruj bifurkacje
@@ -54,9 +86,50 @@ try
         valid = bifurcations(:,1) > margin & bifurcations(:,1) < w-margin & ...
             bifurcations(:,2) > margin & bifurcations(:,2) < h-margin;
         bifurcations = bifurcations(valid, :);
+        logInfo(sprintf('    After border filtering: %d bifurcations', size(bifurcations, 1)), logFile);
     end
     
-    % Utwórz strukturę wynikową
+    % KROK 5: ZWIĘKSZONE FILTROWANIE odległości
+    if ~isempty(endpoints)
+        endpoints = filterCloseMinutiae(endpoints, 10); % ZWIĘKSZONE z 5 na 10
+        logInfo(sprintf('    After distance filtering: %d endpoints', size(endpoints, 1)), logFile);
+    end
+    
+    if ~isempty(bifurcations)
+        bifurcations = filterCloseMinutiae(bifurcations, 10); % ZWIĘKSZONE z 5 na 10
+        logInfo(sprintf('    After distance filtering: %d bifurcations', size(bifurcations, 1)), logFile);
+    end
+    
+    % KROK 5.5: DODATKOWE FILTROWANIE - ogranicz maksymalną liczbę
+    maxEndpoints = 100;  % Maksymalnie 100 endpoints
+    maxBifurcations = 50; % Maksymalnie 50 bifurcations
+    
+    if size(endpoints, 1) > maxEndpoints
+        % Wybierz najlepsze endpoints (najbardziej w środku obrazu)
+        center_x = w/2;
+        center_y = h/2;
+        distances = sqrt((endpoints(:,1) - center_x).^2 + (endpoints(:,2) - center_y).^2);
+        [~, sortIdx] = sort(distances);
+        endpoints = endpoints(sortIdx(1:maxEndpoints), :);
+        logInfo(sprintf('    Limited to %d best endpoints', size(endpoints, 1)), logFile);
+    end
+    
+    if size(bifurcations, 1) > maxBifurcations
+        % Wybierz najlepsze bifurcations
+        center_x = w/2;
+        center_y = h/2;
+        distances = sqrt((bifurcations(:,1) - center_x).^2 + (bifurcations(:,2) - center_y).^2);
+        [~, sortIdx] = sort(distances);
+        bifurcations = bifurcations(sortIdx(1:maxBifurcations), :);
+        logInfo(sprintf('    Limited to %d best bifurcations', size(bifurcations, 1)), logFile);
+    end
+    
+    % KROK 6: Wykryj oczka i kropki (uproszczone)
+    logInfo('    Detecting lakes and dots...', logFile);
+    lakes = detectLakesSimple(binaryImage);
+    dots = detectDotsSimple(skeleton);
+    
+    % KROK 7: Utwórz strukturę wynikową
     minutiae = struct();
     minutiae.endpoints = endpoints;
     minutiae.bifurcations = bifurcations;
@@ -64,13 +137,13 @@ try
     minutiae.dots = dots;
     minutiae.count = size(endpoints, 1) + size(bifurcations, 1) + size(lakes, 1) + size(dots, 1);
     
-    logInfo(sprintf('    Found: %d endpoints, %d bifurcations, %d lakes, %d dots (total: %d)', ...
+    logInfo(sprintf('    FINAL RESULT: %d endpoints, %d bifurcations, %d lakes, %d dots (total: %d)', ...
         size(endpoints, 1), size(bifurcations, 1), size(lakes, 1), size(dots, 1), minutiae.count), logFile);
     
 catch ME
     logError(sprintf('Error detecting minutiae: %s', ME.message), logFile);
     
-    % Fallback
+    % Fallback - pusta struktura
     minutiae = struct();
     minutiae.endpoints = [];
     minutiae.bifurcations = [];
@@ -80,51 +153,98 @@ catch ME
 end
 end
 
-function lakes = detectLakes(binaryImage)
-% DETECTLAKES Wykrywa oczka (zamknięte obszary)
+function filteredMinutiae = filterCloseMinutiae(minutiae, minDistance)
+% Usuń minucje które są zbyt blisko siebie
+if isempty(minutiae)
+    filteredMinutiae = minutiae;
+    return;
+end
 
-% Znajdź dziury w obrazie
-holes = imfill(binaryImage, 'holes') & ~binaryImage;
+filteredMinutiae = [];
+used = false(size(minutiae, 1), 1);
 
-% Analizuj każdą dziurę
-cc = bwconncomp(holes);
+for i = 1:size(minutiae, 1)
+    if used(i)
+        continue;
+    end
+    
+    % Dodaj tę minucję
+    filteredMinutiae = [filteredMinutiae; minutiae(i, :)];
+    used(i) = true;
+    
+    % Oznacz wszystkie bliskie jako użyte
+    for j = i+1:size(minutiae, 1)
+        if ~used(j)
+            dist = sqrt(sum((minutiae(i, :) - minutiae(j, :)).^2));
+            if dist < minDistance
+                used(j) = true;
+            end
+        end
+    end
+end
+end
+
+function lakes = detectLakesSimple(binaryImage)
+% Uproszczone wykrywanie oczek - bardziej restrykcyjne
 lakes = [];
 
-for i = 1:cc.NumObjects
-    % Pobierz współrzędne dziury
-    [y, x] = ind2sub(size(holes), cc.PixelIdxList{i});
+try
+    % Znajdź dziury w obrazie
+    filled = imfill(binaryImage, 'holes');
+    holes = filled & ~binaryImage;
     
-    % Oblicz rozmiar dziury
-    width = max(x) - min(x) + 1;
-    height = max(y) - min(y) + 1;
-    area = length(cc.PixelIdxList{i});
+    % Znajdź połączone komponenty dziur
+    cc = bwconncomp(holes);
     
-    % Filtruj na podstawie rozmiaru (oczka nie powinny być za duże ani za małe)
-    if area >= 10 && area <= 500 && width >= 3 && height >= 3
-        center_x = round(mean(x));
-        center_y = round(mean(y));
-        lakes = [lakes; center_x, center_y, width, height];
+    for i = 1:cc.NumObjects
+        area = length(cc.PixelIdxList{i});
+        
+        % JESZCZE BARDZIEJ RESTRYKCYJNE
+        if area >= 30 && area <= 200  % ZWIĘKSZONE z 20 na 30
+            [y, x] = ind2sub(size(holes), cc.PixelIdxList{i});
+            width = max(x) - min(x) + 1;
+            height = max(y) - min(y) + 1;
+            
+            aspect_ratio = max(width, height) / min(width, height);
+            if aspect_ratio < 2.5  % ZMNIEJSZONE z 3 na 2.5
+                center_x = round(mean(x));
+                center_y = round(mean(y));
+                lakes = [lakes; center_x, center_y, width, height];
+            end
+        end
     end
+    
+    % Ogranicz liczbę oczek
+    if size(lakes, 1) > 20
+        lakes = lakes(1:20, :);
+    end
+catch
+    lakes = [];
 end
 end
 
-function dots = detectDots(skeleton)
-% DETECTDOTS Wykrywa izolowane kropki
-
-% Znajdź pojedyncze piksele (bez sąsiadów)
-se = strel('square', 3);
-isolated = skeleton & ~imdilate(skeleton, se) | skeleton;
-
-% Znajdź małe komponenty (1-3 piksele)
-cc = bwconncomp(isolated);
+function dots = detectDotsSimple(skeleton)
+% Uproszczone wykrywanie kropek - bardzo restrykcyjne
 dots = [];
 
-for i = 1:cc.NumObjects
-    if length(cc.PixelIdxList{i}) <= 3  % Maksymalnie 3 piksele
-        [y, x] = ind2sub(size(skeleton), cc.PixelIdxList{i});
-        center_x = round(mean(x));
-        center_y = round(mean(y));
-        dots = [dots; center_x, center_y];
+try
+    cc = bwconncomp(skeleton);
+    
+    for i = 1:cc.NumObjects
+        area = length(cc.PixelIdxList{i});
+        if area == 1  % TYLKO POJEDYNCZE PIKSELE (zmniejszone z 2 na 1)
+            [y, x] = ind2sub(size(skeleton), cc.PixelIdxList{i});
+            center_x = round(mean(x));
+            center_y = round(mean(y));
+            dots = [dots; center_x, center_y];
+        end
     end
+    
+    % Ogranicz liczbę kropek
+    if size(dots, 1) > 10
+        dots = dots(1:10, :);
+    end
+catch
+    dots = [];
 end
 end
