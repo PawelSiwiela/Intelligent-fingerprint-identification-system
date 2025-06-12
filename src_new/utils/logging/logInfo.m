@@ -1,4 +1,5 @@
 function logInfo(message, logFile)
-% LOGINFO Zapisuje komunikat informacyjny
+% LOGINFO Komunikat informacyjny
+if nargin < 2, logFile = []; end
 writeLog(message, 'INFO', logFile);
 end
