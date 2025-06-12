@@ -52,7 +52,6 @@ try
             end
             
             if mod(i, 10) == 0
-                fprintf('.');
                 logInfo(sprintf('Przetworzono %d/%d obrazów', i, numImages), logFile);
             end
             

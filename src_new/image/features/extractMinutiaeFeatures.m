@@ -35,7 +35,7 @@ try
             end
             
             if mod(i, 10) == 0
-                fprintf('   📊 Przetworzono %d/%d obrazów...\n', i, numImages);
+                logInfo('   📊 Przetworzono %d/%d obrazów...\n', i, numImages);
             end
             
         catch ME

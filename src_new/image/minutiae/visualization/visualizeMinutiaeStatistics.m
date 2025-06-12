@@ -136,10 +136,6 @@ for finger = 1:5
     end
 end
 
-% Dane dla wykresu logujemy do pliku
-logInfo(sprintf('Dane wykresu - Endpoints: %s', mat2str(avgEndpoints')), logFile);
-logInfo(sprintf('Dane wykresu - Bifurcations: %s', mat2str(avgBifurcations')), logFile);
-
 stats = struct();
 stats.minutiaePerImage = minutiaePerImage;
 stats.endpointsPerImage = endpointsPerImage;

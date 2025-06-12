@@ -39,6 +39,7 @@ try
     
     % ETAP 2: PREPROCESSING
     fprintf('\n===== ETAP 2: PREPROCESSING OBRAZÓW =====\n');
+    logInfo('=== PREPROCESSING OBRAZÓW ===');
     etap2Start = tic;
     
     processedImages = cell(size(images));
@@ -49,12 +50,11 @@ try
     
     for i = 1:length(images)
         try
-            processedImages{i} = preprocessing(images{i}, logFile, false);
+            processedImages{i} = preprocessing(images{i}, logFile);
             successCount = successCount + 1;
             
             if mod(i, 10) == 0
-                progressMsg = sprintf('   Przetworzono %d/%d obrazów...', i, length(images));
-                logInfo(progressMsg, logFile);
+                logInfo(sprintf('   Przetworzono %d/%d obrazów...', i, length(images)), logFile);
             end
             
         catch ME
@@ -92,6 +92,7 @@ try
     
     % ETAP 5: WIZUALIZACJE
     fprintf('\n===== ETAP 5: GENEROWANIE WIZUALIZACJI =====\n');
+    logInfo('=== GENEROWANIE WIZUALIZACJI ===');
     etap5Start = tic;
     
     % Wizualizacje minucji (przykład)
