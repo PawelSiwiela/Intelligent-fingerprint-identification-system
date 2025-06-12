@@ -1,7 +1,7 @@
 function config = loadConfig()
 % LOADCONFIG Czysta konfiguracja systemu
 
-fprintf('⚙️ Ładowanie konfiguracji...\n');
+logInfo('⚙️ Ładowanie konfiguracji...');
 
 % ŚCIEŻKI
 config.dataPath = 'data';
@@ -16,6 +16,11 @@ config.trainSamples = 10;
 config.valSamples = 2;
 config.testSamples = 2;
 
+% MINUTIAE
+config.minutiae = struct();
+config.minutiae.minDistance = 8;
+config.minutiae.maxMinutiae = 200;
+
 % OPCJE
 config.saveFigures = false;
 config.showProgress = true;
@@ -28,9 +33,9 @@ for i = 1:length(folders)
     end
 end
 
-fprintf('✅ Konfiguracja załadowana\n');
-fprintf('   📂 Dane: %s\n', config.dataPath);
-fprintf('   📊 Format: %s\n', config.imageFormat);
-fprintf('   📈 Próbki: %d/%d/%d (train/val/test)\n', ...
-    config.trainSamples, config.valSamples, config.testSamples);
+logSuccess('✅ Konfiguracja załadowana');
+logInfo(sprintf('   📂 Dane: %s', config.dataPath));
+logInfo(sprintf('   📊 Format: %s', config.imageFormat));
+logInfo(sprintf('   📈 Próbki: %d/%d/%d (train/val/test)', ...
+    config.trainSamples, config.valSamples, config.testSamples));
 end

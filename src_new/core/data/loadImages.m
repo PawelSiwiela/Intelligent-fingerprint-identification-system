@@ -25,12 +25,12 @@ labels = [];
 totalImages = 0;
 loadedImages = 0;
 
-fprintf('📂 Wczytywanie obrazów z katalogu: %s\n', dataDir);
+logInfo(sprintf('📂 Wczytywanie obrazów z katalogu: %s', dataDir), logFile);
 
 % Wczytywanie z każdego folderu palca
 for i = 1:length(fingerFolders)
     fingerName = fingerFolders{i};
-    fprintf('   📁 Palec %d - %s...\n', i, fingerName);
+    logInfo(sprintf('   📁 Palec %d - %s...', i, fingerName), logFile);
     
     % Możliwe lokalizacje plików
     possiblePaths = {
@@ -57,7 +57,7 @@ for i = 1:length(fingerFolders)
             numImages = length(files);
             totalImages = totalImages + numImages;
             
-            fprintf('      Znaleziono %d obrazów w %s\n', numImages, currentDir);
+            logInfo(sprintf('      Znaleziono %d obrazów w %s', numImages, currentDir), logFile);
             
             % Wczytaj każdy obraz
             for j = 1:numImages

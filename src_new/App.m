@@ -13,8 +13,6 @@ fprintf('TEST APLIKACJI - PIPELINE DO CECH\n');
 fprintf('%s\n', repmat('=', 1, 50));
 
 try
-    % Dodaj ścieżki
-    addpath('config');
     addpath(genpath('utils'));
     addpath(genpath('image'));
     addpath(genpath('core'));
@@ -37,7 +35,7 @@ try
     [images, labels] = loadImages(config, logFile);
     
     etap1Time = toc(etap1Start);
-    fprintf('✓ Wczytano %d obrazów w %.2f sekund\n', length(images), etap1Time);
+    logInfo('✓ Wczytano %d obrazów w %.2f sekund\n', length(images), etap1Time);
     
     % ETAP 2: PREPROCESSING
     fprintf('\n===== ETAP 2: PREPROCESSING OBRAZÓW =====\n');
@@ -55,13 +53,11 @@ try
             successCount = successCount + 1;
             
             if mod(i, 10) == 0
-                fprintf('.');
                 progressMsg = sprintf('   Przetworzono %d/%d obrazów...', i, length(images));
                 logInfo(progressMsg, logFile);
             end
             
         catch ME
-            fprintf('x');
             logWarning(sprintf('Preprocessing failed for image %d: %s', i, ME.message), logFile);
             img = images{i};
             if size(img, 3) == 3, img = rgb2gray(img); end
