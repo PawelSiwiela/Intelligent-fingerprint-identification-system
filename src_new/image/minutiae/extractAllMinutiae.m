@@ -6,7 +6,6 @@ if nargin < 4, logFile = []; end
 try
     logInfo('=== EKSTRAKCJA MINUCJI ===', logFile);
     
-    % ✅ NAPRAWKA - użyj domyślnych wartości jeśli brak config.minutiae
     if isfield(config, 'minutiae')
         minDistance = config.minutiae.minDistance;
         maxMinutiae = config.minutiae.maxMinutiae;
@@ -20,7 +19,7 @@ try
     numImages = length(images);
     allMinutiae = cell(numImages, 1);
     
-    fprintf('🔬 Ekstrakcja minucji z %d obrazów...\n', numImages);
+    fprintf('🔬 Ekstrakcja minucji z %d obrazów... ', numImages);
     
     successCount = 0;
     failureCount = 0;
@@ -42,8 +41,9 @@ try
                 successCount = successCount + 1;
                 
                 if i <= 3
-                    fprintf('   🔍 Obraz %d: E=%d, B=%d, Total=%d\n', i, ...
-                        size(minutiae.endpoints, 1), size(minutiae.bifurcations, 1), size(minutiae.all, 1));
+                    logInfo(sprintf('Obraz %d: E=%d, B=%d, Total=%d', i, ...
+                        size(minutiae.endpoints, 1), size(minutiae.bifurcations, 1), ...
+                        size(minutiae.all, 1)), logFile);
                 end
                 
             else
@@ -52,7 +52,8 @@ try
             end
             
             if mod(i, 10) == 0
-                fprintf('   📊 Przetworzono %d/%d obrazów...\n', i, numImages);
+                fprintf('.');
+                logInfo(sprintf('Przetworzono %d/%d obrazów', i, numImages), logFile);
             end
             
         catch ME
@@ -62,10 +63,8 @@ try
         end
     end
     
-    fprintf('\n📋 EKSTRAKCJA MINUCJI UKOŃCZONA:\n');
-    fprintf('   📊 Łącznie: %d minucji\n', totalMinutiae);
-    fprintf('   📈 Średnio: %.1f minucji/obraz\n', totalMinutiae / max(1, successCount));
-    fprintf('   ✅ Sukces: %d/%d obrazów\n', successCount, numImages);
+    % PODSUMOWANIE
+    fprintf(' ukończono.\n');
     
     logInfo(sprintf('Ekstraktowano łącznie %d minucji (%d sukces, %d błędów)', ...
         totalMinutiae, successCount, failureCount), logFile);

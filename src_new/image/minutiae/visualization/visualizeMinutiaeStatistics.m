@@ -7,7 +7,7 @@ try
     logInfo('Generowanie statystyk minucji...', logFile);
     
     % Zbierz statystyki
-    stats = collectMinutiaeStats(allMinutiae, labels);
+    stats = collectMinutiaeStats(allMinutiae, labels, logFile);
     
     % Wizualizacja 2x2
     figure('Visible', 'off', 'Position', [0, 0, 1400, 1000]);
@@ -83,25 +83,7 @@ try
     saveas(gcf, outputFile);
     close(gcf);
     
-    % 🆕 ULEPSZONE PODSUMOWANIE W KONSOLI
-    fprintf('📊 STATYSTYKI MINUCJI:\n');
-    fprintf('   📈 Łączne minucje: %d (E:%d, B:%d)\n', ...
-        sum(stats.minutiaePerImage), sum(stats.endpointsPerImage), sum(stats.bifurcationsPerImage));
-    
-    for i = 1:5
-        fingerData_E = stats.endpointsPerImage(stats.fingerLabels == i);
-        fingerData_B = stats.bifurcationsPerImage(stats.fingerLabels == i);
-        ratio = mean(fingerData_E) / mean(fingerData_B);
-        
-        fprintf('   👆 %s: E=%.1f, B=%.1f (stosunek %.2f)\n', ...
-            fingerNames{i}, mean(fingerData_E), mean(fingerData_B), ratio);
-    end
-    
-    % Analiza charakterystyk palców
-    [~, maxE_finger] = max(stats.avgEndpoints);
-    [~, maxB_finger] = max(stats.avgBifurcations);
-    fprintf('   🏆 Najwięcej endpoints: %s\n', fingerNames{maxE_finger});
-    fprintf('   🏆 Najwięcej bifurcations: %s\n', fingerNames{maxB_finger});
+    fprintf('📊 Statystyki minucji zapisane w %s\n', outputFile);
     
     logInfo(sprintf('Statystyki minucji zapisane: %s', outputFile), logFile);
     
@@ -110,15 +92,15 @@ catch ME
 end
 end
 
-function stats = collectMinutiaeStats(allMinutiae, labels)
-% Zbiera statystyki z wszystkich minucji - ORYGINALNA DZIAŁAJĄCA WERSJA
+function stats = collectMinutiaeStats(allMinutiae, labels, logFile)
+% Zbierz statystyki z wszystkich minucji z ograniczonym wypisywaniem do konsoli
 
 numImages = length(allMinutiae);
 minutiaePerImage = zeros(numImages, 1);
 endpointsPerImage = zeros(numImages, 1);
 bifurcationsPerImage = zeros(numImages, 1);
 
-fprintf('🔍 DEBUG collectMinutiaeStats:\n');
+logInfo('Zbieranie danych statystycznych minucji...', logFile);
 
 for i = 1:numImages
     if ~isempty(allMinutiae{i}) && isfield(allMinutiae{i}, 'all')
@@ -126,18 +108,18 @@ for i = 1:numImages
         endpointsPerImage(i) = size(allMinutiae{i}.endpoints, 1);
         bifurcationsPerImage(i) = size(allMinutiae{i}.bifurcations, 1);
         
-        % DEBUG dla pierwszych 3
+        % Logowanie szczegółów do pliku zamiast konsoli
         if i <= 3
-            fprintf('   Obraz %d: E=%d, B=%d, Total=%d\n', i, ...
-                endpointsPerImage(i), bifurcationsPerImage(i), minutiaePerImage(i));
+            logInfo(sprintf('Statystyki obrazu %d: E=%d, B=%d, Suma=%d', i, ...
+                endpointsPerImage(i), bifurcationsPerImage(i), minutiaePerImage(i)), logFile);
         end
     end
 end
 
-% Sprawdź totale
+% Totale zapisane do logu zamiast terminalu
 totalE = sum(endpointsPerImage);
 totalB = sum(bifurcationsPerImage);
-fprintf('📊 SUMA: E=%d, B=%d, Total=%d\n', totalE, totalB, totalE + totalB);
+logInfo(sprintf('SUMA statystyk: E=%d, B=%d, Suma=%d', totalE, totalB, totalE + totalB), logFile);
 
 % Statystyki per palec
 avgEndpoints = zeros(5, 1);
@@ -145,19 +127,18 @@ avgBifurcations = zeros(5, 1);
 
 for finger = 1:5
     fingerMask = labels == finger;
-    if sum(fingerMask) > 0  % Sprawdź czy są obrazy dla tego palca
+    if sum(fingerMask) > 0
         avgEndpoints(finger) = mean(endpointsPerImage(fingerMask));
         avgBifurcations(finger) = mean(bifurcationsPerImage(fingerMask));
         
-        fprintf('   Palec %d: średnio E=%.1f, B=%.1f\n', finger, ...
-            avgEndpoints(finger), avgBifurcations(finger));
+        logInfo(sprintf('Palec %d: średnio E=%.1f, B=%.1f', finger, ...
+            avgEndpoints(finger), avgBifurcations(finger)), logFile);
     end
 end
 
-% 🎯 Dane dla wykresu
-fprintf('🎯 Dane dla wykresu:\n');
-fprintf('   Endpoints: %s\n', mat2str(avgEndpoints'));
-fprintf('   Bifurcations: %s\n', mat2str(avgBifurcations'));
+% Dane dla wykresu logujemy do pliku
+logInfo(sprintf('Dane wykresu - Endpoints: %s', mat2str(avgEndpoints')), logFile);
+logInfo(sprintf('Dane wykresu - Bifurcations: %s', mat2str(avgBifurcations')), logFile);
 
 stats = struct();
 stats.minutiaePerImage = minutiaePerImage;
