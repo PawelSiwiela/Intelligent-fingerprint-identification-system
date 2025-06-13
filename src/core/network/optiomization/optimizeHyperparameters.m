@@ -1,8 +1,15 @@
-function [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(trainData, valData, modelType, numTrials)
+function [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(trainData, valData, modelType, numTrials, imagesData)
 % OPTIMIZEHYPERPARAMETERS Optymalizacja hiperparametrów (Random Search ONLY)
+%
+% Args:
+%   imagesData - opcjonalne dane obrazów dla CNN (struct z train/val images)
 
 if nargin < 4
     numTrials = 50;
+end
+
+if nargin < 5
+    imagesData = [];
 end
 
 fprintf('\n🔍 Starting hyperparameter optimization for %s...\n', upper(modelType));
@@ -26,7 +33,7 @@ for trial = 1:numTrials
     hyperparams = sampleRandomHyperparams(ranges, modelType);
     
     % Trenuj i ewaluuj
-    [score, trainTime] = evaluateHyperparams(hyperparams, trainData, valData, modelType);
+    [score, trainTime] = evaluateHyperparams(hyperparams, trainData, valData, modelType, imagesData);
     
     % Zapisz wynik
     result = struct();
@@ -83,15 +90,16 @@ switch lower(modelType)
         ranges.goal = [0.0, 1e-6];
         
     case 'cnn'
-        % 1D CNN ZAKRESY
-        ranges.filterSize = [3, 7];                    % Rozmiar kernela 1D
-        ranges.numFilters1 = [8, 32];                  % Pierwsza warstwa conv1d
-        ranges.numFilters2 = [16, 64];                 % Druga warstwa conv1d
-        ranges.dropoutRate = [0.2, 0.5];               % Dropout
-        ranges.lr = [0.0001, 0.01];                    % Learning rate
-        ranges.l2reg = [1e-6, 1e-2];                   % L2 regularization
-        ranges.epochs = [20, 100];                     % Liczba epochs
-        ranges.miniBatchSize = [2, 8];                 % Batch size
+        % 2D CNN RANGES - PRZYSPIESZENIE!
+        ranges.filterSize = [3, 7];                    
+        ranges.numFilters1 = [8, 32];                  
+        ranges.numFilters2 = [16, 64];                 
+        ranges.numFilters3 = [32, 128];                
+        ranges.dropoutRate = [0.2, 0.5];               
+        ranges.lr = [0.0001, 0.01];                    
+        ranges.l2reg = [1e-6, 1e-2];                   
+        ranges.epochs = [10, 30];                      % ZMNIEJSZONE z [20, 80] do [10, 30]
+        ranges.miniBatchSize = [4, 16];                
         
     otherwise
         error('Unknown model type: %s', modelType);
@@ -168,22 +176,26 @@ switch lower(modelType)
         hyperparams.showCommandLine = false;
         
     case 'cnn'
-        % 1D CNN SAMPLING
-        hyperparams.filterSize = 3 + round(4 * rand());        % 3-7
-        hyperparams.numFilters1 = 8 + round(24 * rand());      % 8-32
-        hyperparams.numFilters2 = 16 + round(48 * rand());     % 16-64
-        hyperparams.dropoutRate = 0.2 + 0.3 * rand();          % 0.2-0.5
-        hyperparams.lr = 0.0001 + 0.0099 * rand();             % 0.0001-0.01
-        hyperparams.l2reg = 1e-6 + (1e-2 - 1e-6) * rand();    % 1e-6 to 1e-2
-        hyperparams.epochs = round(20 + 80 * rand());           % 20-100
-        hyperparams.miniBatchSize = round(2 + 6 * rand());     % 2-8
+        % 2D CNN SAMPLING
+        hyperparams.filterSize = 3 + round(4 * rand());           % 3-7
+        hyperparams.numFilters1 = 8 + round(24 * rand());         % 8-32
+        hyperparams.numFilters2 = 16 + round(48 * rand());        % 16-64
+        hyperparams.numFilters3 = 32 + round(96 * rand());        % 32-128
+        hyperparams.dropoutRate = 0.2 + 0.3 * rand();             % 0.2-0.5
+        hyperparams.lr = 0.0001 + 0.0099 * rand();                % 0.0001-0.01
+        hyperparams.l2reg = 1e-6 + (1e-2 - 1e-6) * rand();       % 1e-6 to 1e-2
+        hyperparams.epochs = round(20 + 60 * rand());             % 20-80
+        hyperparams.miniBatchSize = round(4 + 12 * rand());       % 4-16
         
         % Walidacja
-        hyperparams.miniBatchSize = max(2, min(8, hyperparams.miniBatchSize));
+        hyperparams.miniBatchSize = max(4, min(16, hyperparams.miniBatchSize));
+        
+    otherwise
+        error('Unknown model type: %s', modelType);
 end
 end
 
-function [score, trainTime] = evaluateHyperparams(hyperparams, trainData, valData, modelType)
+function [score, trainTime] = evaluateHyperparams(hyperparams, trainData, valData, modelType, imagesData)
 % EVALUATEHYPERPARAMS Trenuje model z danymi hiperparametrami
 
 try
@@ -206,60 +218,34 @@ try
             score = sum(predicted(:) == valData.labels(:)) / length(valData.labels);
             
         case 'cnn'
-            % 1D CNN EVALUATION
-            try
-                fprintf('🔧 1D CNN Debug:\n');
-                fprintf('   Train features: [%d, %d]\n', size(trainData.features));
-                fprintf('   Val features: [%d, %d]\n', size(valData.features));
-                
-                % Sprawdź rozmiar danych
-                if size(trainData.features, 1) < 4
-                    error('Not enough training samples for CNN');
-                end
-                
-                % Dostosuj miniBatchSize
-                maxBatchSize = min(6, floor(size(trainData.features, 1) / 2));
-                hyperparams.miniBatchSize = min(hyperparams.miniBatchSize, maxBatchSize);
-                fprintf('   Batch size: %d\n', hyperparams.miniBatchSize);
-                
-                % Utwórz 1D CNN
-                numFeatures = size(trainData.features, 2);  % 51 cech
-                cnnStruct = createCNN(hyperparams, 5, numFeatures);
-                
-                % POPRAWNE FORMATOWANIE DANYCH DLA 1D CNN
-                % Dla sequence-to-one: każda próbka to kolumna w cell array
-                numTrainSamples = size(trainData.features, 1);
-                numValSamples = size(valData.features, 1);
-                
-                % Konwertuj do cell arrays - każda próbka to kolumna w komórce
-                X_train = cell(1, numTrainSamples);
-                for i = 1:numTrainSamples
-                    X_train{i} = trainData.features(i, :)';  % [51 × 1] kolumna
-                end
-                Y_train = categorical(trainData.labels);
-                
-                X_val = cell(1, numValSamples);
-                for i = 1:numValSamples
-                    X_val{i} = valData.features(i, :)';      % [51 × 1] kolumna
-                end
-                Y_val = categorical(valData.labels);
-                
-                fprintf('   1D CNN input: %d cell arrays with [%d × 1] sequences\n', ...
-                    length(X_train), size(X_train{1}, 1));
-                
-                % Trenuj 1D CNN
-                net = trainNetwork(X_train, Y_train, cnnStruct.layers, cnnStruct.options);
-                
-                % Ewaluuj
-                predicted = classify(net, X_val);
-                score = sum(predicted == Y_val) / length(Y_val);
-                
-                fprintf('   1D CNN score: %.3f\n', score);
-                
-            catch ME
-                score = 0;
-                fprintf('   1D CNN failed: %s\n', ME.message);
+            % 2D CNN EVALUATION
+            if isempty(imagesData)
+                error('CNN requires images data');
             end
+            
+            % Sprawdź czy mamy wystarczająco danych
+            numTrainImages = size(imagesData.X_train, 4);
+            numValImages = size(imagesData.X_val, 4);
+            
+            if numTrainImages < 4 || numValImages < 2
+                error('Not enough images for CNN training');
+            end
+            
+            % Dostosuj miniBatchSize do dostępnych danych
+            maxBatchSize = min(hyperparams.miniBatchSize, floor(numTrainImages / 2));
+            hyperparams.miniBatchSize = max(2, maxBatchSize);
+            
+            % Utwórz 2D CNN
+            inputSize = size(imagesData.X_train(:,:,:,1));  % [H, W, C]
+            cnnStruct = createCNN(hyperparams, 5, inputSize);
+            
+            % Trenuj 2D CNN
+            net = trainNetwork(imagesData.X_train, imagesData.Y_train, ...
+                cnnStruct.layers, cnnStruct.options);
+            
+            % Ewaluuj
+            predicted = classify(net, imagesData.X_val);
+            score = sum(predicted == imagesData.Y_val) / length(imagesData.Y_val);
             
         otherwise
             error('Unknown model type: %s', modelType);

@@ -1,56 +1,81 @@
 function cnnStruct = createCNN(hyperparams, numClasses, inputSize)
-% CREATECNN 1D CNN dla sekwencji cech minucji (UPROSZCZONA WERSJA)
+% CREATECNN 2D CNN dla obrazów szkieletyzowanych odcisków palców
+%
+% Args:
+%   hyperparams - struktura z hiperparametrami CNN
+%   numClasses - liczba klas (5 palców)
+%   inputSize - rozmiar wejścia [height, width, channels] np. [128, 128, 1]
+%
+% Returns:
+%   cnnStruct - struktura z layers i options
 
 % Walidacja parametrów z bezpiecznymi wartościami domyślnymi
-if ~isfield(hyperparams, 'filterSize'), hyperparams.filterSize = 3; end
-if ~isfield(hyperparams, 'numFilters1'), hyperparams.numFilters1 = 8; end
-if ~isfield(hyperparams, 'numFilters2'), hyperparams.numFilters2 = 16; end
-if ~isfield(hyperparams, 'dropoutRate'), hyperparams.dropoutRate = 0.2; end
+if ~isfield(hyperparams, 'filterSize'), hyperparams.filterSize = 5; end
+if ~isfield(hyperparams, 'numFilters1'), hyperparams.numFilters1 = 16; end
+if ~isfield(hyperparams, 'numFilters2'), hyperparams.numFilters2 = 32; end
+if ~isfield(hyperparams, 'numFilters3'), hyperparams.numFilters3 = 64; end
+if ~isfield(hyperparams, 'dropoutRate'), hyperparams.dropoutRate = 0.3; end
 if ~isfield(hyperparams, 'lr'), hyperparams.lr = 0.001; end
 if ~isfield(hyperparams, 'l2reg'), hyperparams.l2reg = 1e-4; end
-if ~isfield(hyperparams, 'epochs'), hyperparams.epochs = 30; end
-if ~isfield(hyperparams, 'miniBatchSize'), hyperparams.miniBatchSize = 4; end
+if ~isfield(hyperparams, 'epochs'), hyperparams.epochs = 50; end
+if ~isfield(hyperparams, 'miniBatchSize'), hyperparams.miniBatchSize = 8; end
 
 % Walidacja miniBatchSize
-miniBatchSize = max(2, min(6, round(hyperparams.miniBatchSize)));
+miniBatchSize = max(2, min(16, round(hyperparams.miniBatchSize)));
 
-% BARDZO PROSTA 1D CNN ARCHITEKTURA - bez batch norm!
+% 2D CNN ARCHITECTURE dla obrazów fingerprint
 layers = [
-    sequenceInputLayer(inputSize, 'Name', 'input')  % inputSize = 51 cech
+    % Input layer - obrazy szkieletyzowane
+    imageInputLayer(inputSize, 'Name', 'input', 'Normalization', 'zscore')
     
-    % Pierwsza warstwa 1D conv - mała
-    convolution1dLayer(hyperparams.filterSize, hyperparams.numFilters1, ...
-    'Padding', 'same', 'Name', 'conv1d_1')
+    % BLOCK 1: Conv + ReLU + Pool
+    convolution2dLayer([hyperparams.filterSize, hyperparams.filterSize], ...
+        hyperparams.numFilters1, 'Padding', 'same', 'Name', 'conv1', ...
+        'WeightsInitializer', 'he')
+    batchNormalizationLayer('Name', 'bn1')
     reluLayer('Name', 'relu1')
-    % BEZ POOLING - za mała sekwencja
+    maxPooling2dLayer([2, 2], 'Stride', [2, 2], 'Name', 'pool1')  % Zmniejsz o połowę
     
-    % Druga warstwa 1D conv - jeszcze mniejsza
-    convolution1dLayer(3, hyperparams.numFilters2, ...
-    'Padding', 'same', 'Name', 'conv1d_2')
+    % BLOCK 2: Conv + ReLU + Pool
+    convolution2dLayer([3, 3], hyperparams.numFilters2, ...
+        'Padding', 'same', 'Name', 'conv2', 'WeightsInitializer', 'he')
+    batchNormalizationLayer('Name', 'bn2')
     reluLayer('Name', 'relu2')
+    maxPooling2dLayer([2, 2], 'Stride', [2, 2], 'Name', 'pool2')  % Zmniejsz o połowę
     
-    % Global pooling - agreguje całą sekwencję do jednego wektora
-    globalMaxPooling1dLayer('Name', 'globalmaxpool')
+    % BLOCK 3: Conv + ReLU + Pool
+    convolution2dLayer([3, 3], hyperparams.numFilters3, ...
+        'Padding', 'same', 'Name', 'conv3', 'WeightsInitializer', 'he')
+    batchNormalizationLayer('Name', 'bn3')
+    reluLayer('Name', 'relu3')
+    maxPooling2dLayer([2, 2], 'Stride', [2, 2], 'Name', 'pool3')  % Zmniejsz o połowę
     
-    % Proste FC layers
+    % FULLY CONNECTED LAYERS
     dropoutLayer(hyperparams.dropoutRate, 'Name', 'dropout1')
-    fullyConnectedLayer(32, 'Name', 'fc1')  % Mały FC layer
-    reluLayer('Name', 'fc_relu')
+    fullyConnectedLayer(128, 'Name', 'fc1', 'WeightsInitializer', 'he')
+    reluLayer('Name', 'fc_relu1')
+    dropoutLayer(hyperparams.dropoutRate, 'Name', 'dropout2')
     
-    % Output layer
-    fullyConnectedLayer(numClasses, 'Name', 'fc_final')
+    fullyConnectedLayer(64, 'Name', 'fc2', 'WeightsInitializer', 'he')
+    reluLayer('Name', 'fc_relu2')
+    
+    % OUTPUT LAYER
+    fullyConnectedLayer(numClasses, 'Name', 'fc_final', 'WeightsInitializer', 'he')
     softmaxLayer('Name', 'softmax')
     classificationLayer('Name', 'output')
-    ];
+];
 
-% Proste training options
-options = trainingOptions('sgdm', ...           % SGD zamiast Adam
+% Training options dla obrazów fingerprint - PRZYSPIESZENIE
+options = trainingOptions('adam', ...
     'InitialLearnRate', hyperparams.lr, ...
     'MaxEpochs', hyperparams.epochs, ...
     'MiniBatchSize', miniBatchSize, ...
     'L2Regularization', hyperparams.l2reg, ...
-    'Momentum', 0.9, ...                        % Standard momentum
+    'LearnRateSchedule', 'piecewise', ...
+    'LearnRateDropFactor', 0.5, ...
+    'LearnRateDropPeriod', 10, ...                     % ZMNIEJSZONE z 15 do 10
     'Shuffle', 'every-epoch', ...
+    'ValidationPatience', 5, ...                       % ZMNIEJSZONE z 10 do 5
     'Verbose', false, ...
     'Plots', 'none', ...
     'ExecutionEnvironment', 'auto');
