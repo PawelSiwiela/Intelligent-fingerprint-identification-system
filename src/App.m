@@ -7,6 +7,7 @@ function App()
 % 3. Preprocessing
 % 4. Detekcja minucji
 % 5. Ekstrakcja cech
+% 6. ML PIPELINE (NOWE!)
 
 fprintf('\n');
 fprintf('=================================================================\n');
@@ -201,7 +202,43 @@ try
         logWarning(sprintf('Visualization creation failed: %s', ME.message), logFile);
     end
     
-    %% KROK 10: Zakończenie
+    %% KROK 10: ML PIPELINE (NOWE!)
+    fprintf('\n🤖 Starting ML Pipeline...\n');
+    
+    % Zapytaj użytkownika czy chce uruchomić ML Pipeline
+    fprintf('Do you want to run ML Pipeline for model training and evaluation?\n');
+    fprintf('  1. Yes - Run full ML Pipeline (training, optimization, evaluation)\n');
+    fprintf('  2. No - Skip ML Pipeline\n');
+    
+    while true
+        choice = input('Select option (1 or 2): ');
+        
+        if choice == 1
+            runMLPipeline = true;
+            break;
+        elseif choice == 2
+            runMLPipeline = false;
+            break;
+        else
+            fprintf('Invalid choice. Please enter 1 or 2.\n');
+        end
+    end
+    
+    if runMLPipeline
+        try
+            % Uruchom ML Pipeline z obecnymi danymi
+            runIntegratedMLPipeline(allFeatures, validLabels, metadata, logFile);
+            
+            fprintf('✅ ML Pipeline completed successfully!\n');
+        catch ME
+            fprintf('⚠️  ML Pipeline failed: %s\n', ME.message);
+            logWarning(sprintf('ML Pipeline failed: %s', ME.message), logFile);
+        end
+    else
+        fprintf('⏭️  ML Pipeline skipped by user\n');
+    end
+    
+    %% KROK 11: Zakończenie (poprzedni KROK 10)
     executionTime = toc(startTime);
     
     fprintf('\n🎉 Processing completed successfully!\n');
@@ -209,6 +246,11 @@ try
     fprintf('Feature vector size: %d features per image\n', size(allFeatures, 2));
     fprintf('Normalized features range: [0, 1]\n');
     fprintf('Images successfully processed: %d/%d\n', numValidImages, numImages);
+    
+    if runMLPipeline
+        fprintf('ML models saved to: output/models/\n');
+        fprintf('Model comparisons saved to: output/figures/\n');
+    end
     
     % Zamknij log
     closeLog(logFile, executionTime);
@@ -289,4 +331,253 @@ for i = 1:length(dirs)
         mkdir(dirs{i});
     end
 end
+end
+
+%% NOWA FUNKCJA: Zintegrowany ML Pipeline
+function runIntegratedMLPipeline(features, labels, metadata, logFile)
+% RUNINTEGRATEDMLPIPELINE Uruchamia ML Pipeline z danymi z App()
+
+logInfo('Starting integrated ML Pipeline...', logFile);
+
+try
+    %% KROK 1: Podział danych
+    fprintf('\n📊 Splitting dataset...\n');
+    [trainData, valData, testData] = splitDataset(features, labels, metadata, [0.7, 0.25, 0.25]);
+    
+    %% KROK 2: Optymalizacja hiperparametrów
+    models = {'patternnet', 'cnn'};
+    optimizationResults = struct();
+    
+    for modelIdx = 1:length(models)
+        modelType = models{modelIdx};
+        
+        fprintf('\n%s\n', repmat('=', 1, 60));
+        fprintf('🚀 OPTIMIZING %s\n', upper(modelType));
+        fprintf('%s\n', repmat('=', 1, 60));
+        
+        % Mniejsza liczba prób dla szybszego działania w zintegrowanej wersji
+        numTrials = 30;
+        [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(trainData, valData, modelType, numTrials);
+        
+        optimizationResults.(modelType) = struct();
+        optimizationResults.(modelType).bestHyperparams = bestHyperparams;
+        optimizationResults.(modelType).bestScore = bestScore;
+        optimizationResults.(modelType).allResults = allResults;
+        
+        fprintf('\n🎯 Best %s validation accuracy: %.2f%%\n', upper(modelType), bestScore * 100);
+        logInfo(sprintf('Best %s validation accuracy: %.2f%%', upper(modelType), bestScore * 100), logFile);
+    end
+    
+    %% KROK 3: Trenuj finalne modele
+    fprintf('\n%s\n', repmat('=', 1, 60));
+    fprintf('🏁 TRAINING FINAL MODELS\n');
+    fprintf('%s\n', repmat('=', 1, 60));
+    
+    finalModels = struct();
+    
+    for modelIdx = 1:length(models)
+        modelType = models{modelIdx};
+        
+        % SPRAWDŹ czy optymalizacja się udała
+        if ~isfield(optimizationResults, modelType) || optimizationResults.(modelType).bestScore == 0
+            fprintf('\n⚠️  Skipping %s - optimization failed\n', upper(modelType));
+            logWarning(sprintf('Skipping %s - optimization failed', upper(modelType)), logFile);
+            continue;
+        end
+        
+        bestHyperparams = optimizationResults.(modelType).bestHyperparams;
+        
+        fprintf('\n🔥 Training final %s model...\n', upper(modelType));
+        
+        try
+            % Połącz train+val dla finalnego trenowania
+            combinedTrainData = struct();
+            combinedTrainData.features = [trainData.features; valData.features];
+            combinedTrainData.labels = [trainData.labels; valData.labels];
+            
+            [finalModel, trainResults] = trainFinalModel(combinedTrainData, testData, modelType, bestHyperparams);
+            
+            finalModels.(modelType) = finalModel;
+            finalModels.([modelType '_results']) = trainResults;
+            
+            fprintf('✅ Final %s test accuracy: %.2f%%\n', upper(modelType), trainResults.testAccuracy * 100);
+            logSuccess(sprintf('Final %s test accuracy: %.2f%%', upper(modelType), trainResults.testAccuracy * 100), logFile);
+            
+            % Zapisz model jeśli accuracy > 95%
+            if trainResults.testAccuracy > 0.95
+                saveHighPerformanceModel(finalModel, trainResults, modelType, bestHyperparams);
+                logSuccess(sprintf('High-performance %s model saved!', upper(modelType)), logFile);
+            end
+            
+        catch ME
+            fprintf('⚠️  Training %s model failed: %s\n', upper(modelType), ME.message);
+            logError(sprintf('Training %s model failed: %s', upper(modelType), ME.message), logFile);
+        end
+    end
+    
+    %% KROK 4: Wizualizacje i porównania (tylko dla udanych modeli)
+    fprintf('\n📊 Generating model comparisons...\n');
+    
+    % Sprawdź które modele się udały
+    successfulModels = {};
+    for modelIdx = 1:length(models)
+        modelType = models{modelIdx};
+        if isfield(finalModels, modelType)
+            successfulModels{end+1} = modelType;
+        end
+    end
+    
+    if length(successfulModels) >= 1
+        % Porównaj modele (tylko udane)
+        compareModels(finalModels, optimizationResults, successfulModels);
+        
+        % Szczegółowe wizualizacje
+        for i = 1:length(successfulModels)
+            modelType = successfulModels{i};
+            model = finalModels.(modelType);
+            results = finalModels.([modelType '_results']);
+            
+            createModelVisualization(model, results, modelType, testData);
+        end
+    else
+        fprintf('⚠️  No successful models to visualize\n');
+    end
+    
+    %% KROK 5: Podsumowanie ML Pipeline (tylko udane modele)
+    fprintf('\n%s\n', repmat('=', 1, 60));
+    fprintf('📈 ML PIPELINE RESULTS\n');
+    fprintf('%s\n', repmat('=', 1, 60));
+    
+    if isempty(successfulModels)
+        fprintf('\n❌ No models trained successfully!\n');
+        logError('No models trained successfully!', logFile);
+        return;
+    end
+    
+    % Podsumowanie tylko udanych modeli
+    for i = 1:length(successfulModels)
+        modelType = successfulModels{i};
+        results = finalModels.([modelType '_results']);
+        
+        fprintf('\n%s:\n', upper(modelType));
+        fprintf('  Validation accuracy: %.2f%%\n', optimizationResults.(modelType).bestScore * 100);
+        fprintf('  Test accuracy:       %.2f%%\n', results.testAccuracy * 100);
+        fprintf('  Training time:       %.1f seconds\n', results.trainTime);
+        
+        if results.testAccuracy > 0.95
+            fprintf('  🏆 HIGH PERFORMANCE MODEL SAVED!\n');
+        end
+    end
+    
+    % Wybierz zwycięzcę (tylko z udanych modeli)
+    if length(successfulModels) >= 2
+        % Porównaj wszystkie udane modele
+        bestAcc = 0;
+        winner = '';
+        for i = 1:length(successfulModels)
+            modelType = successfulModels{i};
+            acc = finalModels.([modelType '_results']).testAccuracy;
+            if acc > bestAcc
+                bestAcc = acc;
+                winner = modelType;
+            end
+        end
+        fprintf('\n🥇 BEST MODEL: %s with %.2f%% test accuracy!\n', upper(winner), bestAcc * 100);
+        logSuccess(sprintf('Best model: %s with %.2f%% test accuracy', upper(winner), bestAcc * 100), logFile);
+    else
+        % Tylko jeden udany model
+        winner = successfulModels{1};
+        winnerAcc = finalModels.([winner '_results']).testAccuracy;
+        fprintf('\n🏆 ONLY SUCCESSFUL MODEL: %s with %.2f%% test accuracy!\n', upper(winner), winnerAcc * 100);
+        logSuccess(sprintf('Only successful model: %s with %.2f%% test accuracy', upper(winner), winnerAcc * 100), logFile);
+    end
+end
+end
+
+function [finalModel, results] = trainFinalModel(trainData, testData, modelType, hyperparams)
+% TRAINFINALMODEL Trenuje finalny model z najlepszymi hiperparametrami
+
+results = struct();
+tic;
+
+switch lower(modelType)
+    case 'patternnet'
+        % PatternNet (bez zmian)
+        net = createPatternNet(hyperparams);
+        
+        X_train = trainData.features';
+        T_train = full(ind2vec(trainData.labels', 5));
+        
+        finalModel = train(net, X_train, T_train);
+        
+        X_test = testData.features';
+        Y_test = finalModel(X_test);
+        [~, predicted] = max(Y_test, [], 1);
+        
+        results.testAccuracy = sum(predicted(:) == testData.labels(:)) / length(testData.labels);
+        results.predictions = predicted(:);
+        results.trueLabels = testData.labels;
+        
+    case 'cnn'
+        % 1D CNN TRAINING
+        numFeatures = size(trainData.features, 2);  % 51 cech
+        cnnStruct = createCNN(hyperparams, 5, numFeatures);
+        
+        % KONWERTUJ DO CELL ARRAYS
+        numTrainSamples = size(trainData.features, 1);
+        numTestSamples = size(testData.features, 1);
+        
+        % Przygotuj dane dla 1D CNN: cell arrays z kolumnami [features × 1]
+        X_train = cell(1, numTrainSamples);
+        for i = 1:numTrainSamples
+            X_train{i} = trainData.features(i, :)';  % [51 × 1]
+        end
+        Y_train = categorical(trainData.labels);
+        
+        X_test = cell(1, numTestSamples);
+        for i = 1:numTestSamples
+            X_test{i} = testData.features(i, :)';    % [51 × 1]
+        end
+        Y_test = categorical(testData.labels);
+        
+        finalModel = trainNetwork(X_train, Y_train, cnnStruct.layers, cnnStruct.options);
+        
+        % Testuj
+        predicted = classify(finalModel, X_test);
+        results.testAccuracy = sum(predicted == Y_test) / length(Y_test);
+        results.predictions = double(predicted);
+        results.trueLabels = double(Y_test);
+        
+    otherwise
+        error('Unknown model type: %s', modelType);
+end
+
+results.trainTime = toc;
+results.modelType = modelType;
+results.hyperparams = hyperparams;
+end
+
+function saveHighPerformanceModel(model, results, modelType, hyperparams)
+% SAVEHIGHPERFORMANCEMODEL Zapisuje modele z accuracy > 95%
+
+outputDir = 'output/models';
+if ~exist(outputDir, 'dir')
+    mkdir(outputDir);
+end
+
+timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+filename = sprintf('%s_acc%.1f_%s.mat', modelType, results.testAccuracy*100, timestamp);
+filepath = fullfile(outputDir, filename);
+
+% Struktura do zapisu
+modelData = struct();
+modelData.model = model;
+modelData.results = results;
+modelData.hyperparams = hyperparams;
+modelData.modelType = modelType;
+modelData.saveTimestamp = timestamp;
+
+save(filepath, 'modelData');
+
+fprintf('🔥 High-performance model saved: %s\n', filename);
 end

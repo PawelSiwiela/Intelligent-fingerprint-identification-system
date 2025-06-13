@@ -19,7 +19,7 @@ config.minutiae.detection.angleThreshold = 15;     % Próg kąta dla bifurkacji 
 
 % Parametry filtracji
 config.minutiae.filtering.qualityThreshold = 0.3;  % Próg jakości minucji
-config.minutiae.filtering.maxMinutiae = 300;       % Maksymalna liczba minucji
+config.minutiae.filtering.maxMinutiae = 400;       % Maksymalna liczba minucji
 config.minutiae.filtering.ridgeCountRadius = 20;   % Promień dla liczenia linii
 
 % Parametry ekstrakcji cech
