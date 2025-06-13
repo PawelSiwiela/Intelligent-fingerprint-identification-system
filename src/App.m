@@ -175,43 +175,40 @@ try
         fprintf('  %s: %d images\n', fingerName, fingerCount);
     end
     
-    %% KROK 8: Zapisz wyniki z automatyczną normalizacją
-    fprintf('\n💾 Saving results...\n');
-    
-    resultsFile = fullfile('output', sprintf('fingerprint_results_%s.mat', timestamp));
-    
-    % Przygotuj strukturę wyników
-    results = struct();
-    results.metadata = metadata;
-    results.config = config;
-    results.features = allFeatures;
-    results.labels = validLabels;
-    results.validImageIndices = validImageIndices;
-    results.minutiae = allMinutiae(validImageIndices);
-    results.processingTimestamp = timestamp;
-    results.selectedFormat = selectedFormat;
-    results.dataPath = dataPath;
+    %% KROK 8: Normalizacja cech
+    fprintf('\n🔧 Normalizing features...\n');
     
     % Automatyczna normalizacja cech (Min-Max)
     fprintf('Normalizing features using Min-Max method...\n');
     normalizedFeatures = normalizeFeatures(allFeatures, 'minmax');
-    results.normalizedFeatures = normalizedFeatures;
-    results.normalizationMethod = 'minmax';
     
     logInfo('Features automatically normalized using Min-Max method', logFile);
     
-    % Zapisz do pliku
-    save(resultsFile, 'results');
-    fprintf('✅ Results saved to: %s\n', resultsFile);
-    logInfo(sprintf('Results saved to: %s', resultsFile), logFile);
+    %% KROK 9: WIZUALIZACJE CECH MINUCJI
+    fprintf('\n📊 Creating minutiae features visualizations...\n');
     
-    %% KROK 9: Zakończenie
+    try
+        if numValidImages >= 10 % Minimum próbek dla sensownych wizualizacji
+            % TYLKO znormalizowane cechy - lepsze do wizualizacji i porównan
+            visualizeMinutiaeFeatures(normalizedFeatures, validLabels, metadata, config.visualization.outputDir);
+            
+            fprintf('✅ Minutiae features visualizations completed\n');
+        else
+            fprintf('⚠️  Skipping visualizations - need at least 10 samples (have %d)\n', numValidImages);
+        end
+    catch ME
+        fprintf('⚠️  Visualization creation failed: %s\n', ME.message);
+        logWarning(sprintf('Visualization creation failed: %s', ME.message), logFile);
+    end
+    
+    %% KROK 10: Zakończenie
     executionTime = toc(startTime);
     
     fprintf('\n🎉 Processing completed successfully!\n');
     fprintf('Total execution time: %.2f seconds\n', executionTime);
     fprintf('Feature vector size: %d features per image\n', size(allFeatures, 2));
     fprintf('Normalized features range: [0, 1]\n');
+    fprintf('Images successfully processed: %d/%d\n', numValidImages, numImages);
     
     % Zamknij log
     closeLog(logFile, executionTime);
@@ -284,8 +281,7 @@ function createOutputDirectories(config)
 % CREATEOUTPUTDIRECTORIES Tworzy niezbędne katalogi wyjściowe
 dirs = {
     config.logging.outputDir,
-    config.visualization.outputDir,
-    'output'
+    config.visualization.outputDir
     };
 
 for i = 1:length(dirs)
