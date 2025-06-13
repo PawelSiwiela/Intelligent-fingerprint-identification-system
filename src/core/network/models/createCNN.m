@@ -30,22 +30,22 @@ layers = [
     
     % BLOCK 1: Conv + ReLU + Pool
     convolution2dLayer([hyperparams.filterSize, hyperparams.filterSize], ...
-        hyperparams.numFilters1, 'Padding', 'same', 'Name', 'conv1', ...
-        'WeightsInitializer', 'he')
+    hyperparams.numFilters1, 'Padding', 'same', 'Name', 'conv1', ...
+    'WeightsInitializer', 'he')
     batchNormalizationLayer('Name', 'bn1')
     reluLayer('Name', 'relu1')
     maxPooling2dLayer([2, 2], 'Stride', [2, 2], 'Name', 'pool1')  % Zmniejsz o połowę
     
     % BLOCK 2: Conv + ReLU + Pool
     convolution2dLayer([3, 3], hyperparams.numFilters2, ...
-        'Padding', 'same', 'Name', 'conv2', 'WeightsInitializer', 'he')
+    'Padding', 'same', 'Name', 'conv2', 'WeightsInitializer', 'he')
     batchNormalizationLayer('Name', 'bn2')
     reluLayer('Name', 'relu2')
     maxPooling2dLayer([2, 2], 'Stride', [2, 2], 'Name', 'pool2')  % Zmniejsz o połowę
     
     % BLOCK 3: Conv + ReLU + Pool
     convolution2dLayer([3, 3], hyperparams.numFilters3, ...
-        'Padding', 'same', 'Name', 'conv3', 'WeightsInitializer', 'he')
+    'Padding', 'same', 'Name', 'conv3', 'WeightsInitializer', 'he')
     batchNormalizationLayer('Name', 'bn3')
     reluLayer('Name', 'relu3')
     maxPooling2dLayer([2, 2], 'Stride', [2, 2], 'Name', 'pool3')  % Zmniejsz o połowę
@@ -63,19 +63,19 @@ layers = [
     fullyConnectedLayer(numClasses, 'Name', 'fc_final', 'WeightsInitializer', 'he')
     softmaxLayer('Name', 'softmax')
     classificationLayer('Name', 'output')
-];
+    ];
 
-% Training options dla obrazów fingerprint - PRZYSPIESZENIE
+% Training options dla obrazów fingerprint - MAKSYMALNE PRZYSPIESZENIE
 options = trainingOptions('adam', ...
     'InitialLearnRate', hyperparams.lr, ...
     'MaxEpochs', hyperparams.epochs, ...
     'MiniBatchSize', miniBatchSize, ...
     'L2Regularization', hyperparams.l2reg, ...
     'LearnRateSchedule', 'piecewise', ...
-    'LearnRateDropFactor', 0.5, ...
-    'LearnRateDropPeriod', 10, ...                     % ZMNIEJSZONE z 15 do 10
+    'LearnRateDropFactor', 0.3, ...                   % ZWIĘKSZONE z 0.5 do 0.3 - szybszy drop
+    'LearnRateDropPeriod', 5, ...                     % ZMNIEJSZONE z 10 do 5 - częstszy drop
     'Shuffle', 'every-epoch', ...
-    'ValidationPatience', 5, ...                       % ZMNIEJSZONE z 10 do 5
+    'ValidationPatience', 3, ...                      % ZMNIEJSZONE z 5 do 3 - szybsze early stopping
     'Verbose', false, ...
     'Plots', 'none', ...
     'ExecutionEnvironment', 'auto');

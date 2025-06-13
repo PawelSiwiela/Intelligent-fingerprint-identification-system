@@ -1,8 +1,5 @@
 function [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(trainData, valData, modelType, numTrials, imagesData)
-% OPTIMIZEHYPERPARAMETERS Optymalizacja hiperparametrów (Random Search ONLY)
-%
-% Args:
-%   imagesData - opcjonalne dane obrazów dla CNN (struct z train/val images)
+% OPTIMIZEHYPERPARAMETERS Optymalizacja hiperparametrów (Random Search + Early Stopping TYLKO przy 95%)
 
 if nargin < 4
     numTrials = 50;
@@ -13,7 +10,10 @@ if nargin < 5
 end
 
 fprintf('\n🔍 Starting hyperparameter optimization for %s...\n', upper(modelType));
-fprintf('Number of trials: %d (Random Search only)\n', numTrials);
+fprintf('Number of trials: %d (Random Search with Early Stopping)\n', numTrials);
+
+% EARLY STOPPING PARAMETERS - TYLKO PRZY WYSOKIEJ ACCURACY
+earlyStopThreshold = 0.95;  % Zatrzymaj TYLKO jeśli osiągnie 95% accuracy
 
 % Zakresy hiperparametrów
 ranges = getHyperparameterRanges(modelType);
@@ -23,8 +23,9 @@ bestScore = 0;
 bestHyperparams = [];
 allResults = [];
 
-% TYLKO Random Search
-fprintf('\n🎲 Random Search (%d trials)\n', numTrials);
+% Random Search z Early Stopping TYLKO przy 95%
+fprintf('\n🎲 Random Search (%d trials) with Early Stopping\n', numTrials);
+fprintf('   Early stop threshold: %.1f%% accuracy (ONLY condition for stopping)\n', earlyStopThreshold * 100);
 
 for trial = 1:numTrials
     fprintf('  Trial %d/%d: ', trial, numTrials);
@@ -48,22 +49,37 @@ for trial = 1:numTrials
         bestScore = score;
         bestHyperparams = hyperparams;
         fprintf('🎯 NEW BEST! Score: %.3f (%.1fs)\n', score, trainTime);
+        
+        % EARLY STOPPING - TYLKO jeśli osiągnięto doskonały wynik (>=95%)
+        if score >= earlyStopThreshold
+            fprintf('🛑 EARLY STOPPING! Achieved %.1f%% accuracy (>= %.1f%% threshold)\n', ...
+                score * 100, earlyStopThreshold * 100);
+            fprintf('   🎉 EXCELLENT RESULT! Stopping optimization after %d/%d trials\n', trial, numTrials);
+            break;
+        end
     else
         fprintf('Score: %.3f (%.1fs)\n', score, trainTime);
+        % BRAK early stopping przy braku poprawy - kontynuuj wszystkie trials
     end
 end
 
 % Podsumowanie
 fprintf('\n📊 Optimization completed!\n');
 fprintf('Best validation accuracy: %.3f%%\n', bestScore * 100);
-fprintf('Total trials: %d\n', length(allResults));
+fprintf('Total trials completed: %d/%d\n', length(allResults), numTrials);
+
+if bestScore >= earlyStopThreshold
+    fprintf('🎉 EXCELLENT RESULT! Early stopped due to achieving %.1f%% accuracy\n', earlyStopThreshold * 100);
+else
+    fprintf('📈 Completed all %d trials. Best result: %.1f%%\n', numTrials, bestScore * 100);
+end
 
 % Sortuj wszystkie wyniki
 [~, sortIdx] = sort([allResults.score], 'descend');
 allResults = allResults(sortIdx);
 
 % Pokaż top 5
-fprintf('\n🏆 Top 5 configurations:\n');
+fprintf('\n🏆 Top %d configurations:\n', min(5, length(allResults)));
 for i = 1:min(5, length(allResults))
     result = allResults(i);
     fprintf('  %d. Score: %.3f%% (%.1fs) - %s\n', ...
@@ -90,16 +106,16 @@ switch lower(modelType)
         ranges.goal = [0.0, 1e-6];
         
     case 'cnn'
-        % 2D CNN RANGES - PRZYSPIESZENIE!
-        ranges.filterSize = [3, 7];                    
-        ranges.numFilters1 = [8, 32];                  
-        ranges.numFilters2 = [16, 64];                 
-        ranges.numFilters3 = [32, 128];                
-        ranges.dropoutRate = [0.2, 0.5];               
-        ranges.lr = [0.0001, 0.01];                    
-        ranges.l2reg = [1e-6, 1e-2];                   
-        ranges.epochs = [10, 30];                      % ZMNIEJSZONE z [20, 80] do [10, 30]
-        ranges.miniBatchSize = [4, 16];                
+        % 2D CNN RANGES - MAKSYMALNE PRZYSPIESZENIE!
+        ranges.filterSize = [3, 5];                    % ZMNIEJSZONE z [3, 7] do [3, 5]
+        ranges.numFilters1 = [8, 24];                  % ZMNIEJSZONE z [8, 32] do [8, 24]
+        ranges.numFilters2 = [16, 48];                 % ZMNIEJSZONE z [16, 64] do [16, 48]
+        ranges.numFilters3 = [32, 96];                 % ZMNIEJSZONE z [32, 128] do [32, 96]
+        ranges.dropoutRate = [0.2, 0.4];               % ZMNIEJSZONE z [0.2, 0.5] do [0.2, 0.4]
+        ranges.lr = [0.001, 0.01];                     % ZWIĘKSZONE z [0.0001, 0.01] do [0.001, 0.01]
+        ranges.l2reg = [1e-5, 1e-3];                   % ZMNIEJSZONE z [1e-6, 1e-2] do [1e-5, 1e-3]
+        ranges.epochs = [5, 15];                       % DRASTYCZNIE ZMNIEJSZONE z [10, 30] do [5, 15]
+        ranges.miniBatchSize = [4, 12];                % ZMNIEJSZONE z [4, 16] do [4, 12]
         
     otherwise
         error('Unknown model type: %s', modelType);
@@ -177,18 +193,18 @@ switch lower(modelType)
         
     case 'cnn'
         % 2D CNN SAMPLING
-        hyperparams.filterSize = 3 + round(4 * rand());           % 3-7
-        hyperparams.numFilters1 = 8 + round(24 * rand());         % 8-32
-        hyperparams.numFilters2 = 16 + round(48 * rand());        % 16-64
-        hyperparams.numFilters3 = 32 + round(96 * rand());        % 32-128
-        hyperparams.dropoutRate = 0.2 + 0.3 * rand();             % 0.2-0.5
-        hyperparams.lr = 0.0001 + 0.0099 * rand();                % 0.0001-0.01
-        hyperparams.l2reg = 1e-6 + (1e-2 - 1e-6) * rand();       % 1e-6 to 1e-2
-        hyperparams.epochs = round(20 + 60 * rand());             % 20-80
-        hyperparams.miniBatchSize = round(4 + 12 * rand());       % 4-16
+        hyperparams.filterSize = 3 + round(2 * rand());           % 3-5
+        hyperparams.numFilters1 = 8 + round(16 * rand());         % 8-24
+        hyperparams.numFilters2 = 16 + round(32 * rand());        % 16-48
+        hyperparams.numFilters3 = 32 + round(64 * rand());        % 32-96
+        hyperparams.dropoutRate = 0.2 + 0.2 * rand();             % 0.2-0.4
+        hyperparams.lr = 0.001 + 0.009 * rand();                  % 0.001-0.01
+        hyperparams.l2reg = 1e-5 + (1e-3 - 1e-5) * rand();       % 1e-5 to 1e-3
+        hyperparams.epochs = round(5 + 10 * rand());             % 5-15
+        hyperparams.miniBatchSize = round(4 + 8 * rand());       % 4-12
         
         % Walidacja
-        hyperparams.miniBatchSize = max(4, min(16, hyperparams.miniBatchSize));
+        hyperparams.miniBatchSize = max(4, min(12, hyperparams.miniBatchSize));
         
     otherwise
         error('Unknown model type: %s', modelType);
