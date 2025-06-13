@@ -1,67 +1,52 @@
-function processedImage = preprocessing(image, logFile, showVisualization)
-% PREPROCESSING Główna funkcja preprocessingu - UPROSZCZONA
+function preprocessedImage = preprocessing(image, logFile)
+% PREPROCESSING Główna funkcja preprocessingu odcisków palców
 %
-% Input:
+% Argumenty:
 %   image - obraz wejściowy
-%   logFile - plik do logowania (opcjonalny)
-%   showVisualization - czy pokazać wizualizację kroków (opcjonalny)
+%   logFile - plik logów (opcjonalny)
 %
 % Output:
-%   processedImage - przetworzony obraz binarny
+%   preprocessedImage - obraz po preprocessingu
+
+if nargin < 2, logFile = []; end
 
 try
-    if nargin < 2, logFile = []; end
-    if nargin < 3, showVisualization = false; end
-    
-    % Walidacja obrazu
+    % Konwersja do skali szarości jeśli potrzeba
     if size(image, 3) == 3
         image = rgb2gray(image);
     end
-    if ~isa(image, 'double')
-        image = im2double(image);
-    end
+    image = im2double(image);
     
-    logInfo('  Preprocessing: 6-step advanced pipeline...', logFile);
-    
-    % KROK 1: Orientacja
-    logInfo('    1/6: Ridge orientation...', logFile);
+    % KROK 1: Orientacja linii papilarnych
     orientation = computeRidgeOrientation(image, 16);
     
-    % KROK 2: Częstotliwość
-    logInfo('    2/6: Ridge frequency...', logFile);
+    % KROK 2: Częstotliwość linii papilarnych
     frequency = computeRidgeFrequency(image, orientation, 32);
     
-    % KROK 3: Filtr Gabora
-    logInfo('    3/6: Gabor filtering...', logFile);
+    % KROK 3: Filtracja Gabora
     gaborFiltered = applyGaborFilter(image, orientation, frequency);
     
     % KROK 4: Segmentacja
-    logInfo('    4/6: Segmentation...', logFile);
     [segmentedImage, mask] = segmentFingerprint(gaborFiltered);
     
-    % KROK 5: Binaryzacja
-    logInfo('    5/6: Binarization...', logFile);
+    % KROK 5: Binaryzacja zorientowana na orientację
     binaryImage = orientationAwareBinarization(segmentedImage, orientation, mask);
     
-    % KROK 6: Szkieletyzacja (KOŃCOWY)
-    logInfo('    6/6: Skeletonization...', logFile);
-    processedImage = ridgeThinning(binaryImage);
+    % KROK 6: Szkieletyzacja
+    skeletonImage = ridgeThinning(binaryImage);
     
     % Finalne czyszczenie
-    processedImage = processedImage & mask;
-    processedImage = bwmorph(processedImage, 'clean');
-    
-    finalCoverage = sum(processedImage(:)) / numel(processedImage) * 100;
-    logInfo(sprintf('  Final coverage: %.2f%%', finalCoverage), logFile);
+    preprocessedImage = skeletonImage & mask;
+    preprocessedImage = bwmorph(preprocessedImage, 'clean');
     
 catch ME
-    logError(sprintf('Preprocessing failed: %s', ME.message), logFile);
+    % Log błędów zawsze
+    logError(sprintf('Preprocessing error: %s', ME.message), logFile);
     
-    % Fallback
+    % Fallback - prosta binaryzacja
     if size(image, 3) == 3
         image = rgb2gray(image);
     end
-    processedImage = imbinarize(image, 'adaptive');
-    processedImage = bwmorph(processedImage, 'clean');
+    preprocessedImage = imbinarize(image);
 end
 end

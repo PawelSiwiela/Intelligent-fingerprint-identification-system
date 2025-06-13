@@ -1,88 +1,296 @@
 function App()
-% APP Prosta aplikacja konsolowa do rozpoznawania odcisków palców
+% APP Główna aplikacja terminowa dla systemu identyfikacji odcisków palców
+%
+% Przeprowadza użytkownika przez cały pipeline:
+% 1. Wybór formatu (PNG/TIFF)
+% 2. Wczytywanie danych
+% 3. Preprocessing
+% 4. Detekcja minucji
+% 5. Ekstrakcja cech
 
-clc;
-
-fprintf('🔬 SYSTEM ROZPOZNAWANIA ODCISKÓW PALCÓW\n');
-fprintf('%s\n', repmat('=', 1, 50));
-
-% Wczytaj konfigurację
-config = loadConfig();
-
-% ===== WYBÓR FORMATU OBRAZÓW =====
-fprintf('\nFormat obrazów:\n');
-fprintf('1 - PNG (aktualny: %s)\n', config.imageFormat);
-fprintf('2 - TIFF\n');
-fprintf('Wybierz [1-2]: ');
-formatChoice = input('');
-
-if formatChoice == 2
-    config.imageFormat = 'tiff';
-    fprintf('✓ Format: TIFF\n');
-else
-    config.imageFormat = 'png';
-    fprintf('✓ Format: PNG\n');
-end
-
-% ===== ZAPISYWANIE FIGUR =====
-fprintf('\nZapisywanie figur:\n');
-fprintf('1 - Tak\n');
-fprintf('2 - Nie\n');
-fprintf('Wybierz [1-2]: ');
-saveChoice = input('');
-
-saveFigures = (saveChoice == 1);
-fprintf('✓ Zapisywanie figur: %s\n', getYesNo(saveFigures));
-
-% DODAJ TO DO CONFIG!
-config.saveFigures = saveFigures;
-
-% ===== URUCHOM SYSTEM OD RAZU =====
-fprintf('\n🚀 URUCHAMIAM SYSTEM...\n');
-fprintf('%s\n', repmat('=', 1, 50));
+fprintf('\n');
+fprintf('=================================================================\n');
+fprintf('              FINGERPRINT IDENTIFICATION SYSTEM                 \n');
+fprintf('=================================================================\n');
+fprintf('\n');
 
 try
-    % Przygotuj log
-    timestamp = datestr(now, 'yyyymmdd_HHMMSS');
-    logFile = fullfile(config.logsPath, sprintf('app_system_%s.log', timestamp));
+    %% KROK 1: Inicjalizacja
+    fprintf('🔧 Initializing system...\n');
     
-    % Uruchom system
-    tic;
-    results = fingerprintRecognition(config, logFile);
-    elapsed = toc;
+    % Wczytaj konfigurację
+    config = loadConfig();
     
-    % Wyświetl wyniki
-    if results.success
-        fprintf('\n✅ SYSTEM UKOŃCZONY w %.2f sekund!\n', elapsed);
-        fprintf('📊 Przygotowane dane:\n');
-        fprintf('  🎯 Trening: %d obrazów\n', results.stats.trainSamples);
-        fprintf('  🔍 Walidacja: %d obrazów\n', results.stats.valSamples);
-        fprintf('  📋 Test: %d obrazów\n', results.stats.testSamples);
-        fprintf('  📈 ŁĄCZNIE: %d obrazów\n', results.stats.totalSamples);
-        fprintf('📁 Logi: %s\n', logFile);
+    % Utwórz katalogi wyjściowe
+    createOutputDirectories(config);
+    
+    % Utwórz plik logów
+    timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+    logFile = fullfile(config.logging.outputDir, sprintf('fingerprint_processing_%s.log', timestamp));
+    
+    % Rozpocznij logowanie
+    logInfo('=============================================================', logFile);
+    logInfo('           FINGERPRINT IDENTIFICATION SYSTEM STARTED         ', logFile);
+    logInfo('=============================================================', logFile);
+    logInfo(sprintf('Session started: %s', datestr(now)), logFile);
+    
+    startTime = tic;
+    
+    %% KROK 2: Wybór formatu danych
+    fprintf('\n📂 Data format selection...\n');
+    selectedFormat = selectDataFormat();
+    
+    % Zaktualizuj konfigurację
+    config.dataLoading.format = selectedFormat;
+    logInfo(sprintf('Selected data format: %s', selectedFormat), logFile);
+    
+    %% KROK 3: Wczytywanie danych
+    fprintf('\n📥 Loading image data...\n');
+    
+    % Używaj domyślnej ścieżki danych
+    dataPath = 'data';
+    
+    fprintf('Loading %s images from: %s\n', selectedFormat, dataPath);
+    [imageData, labels, metadata] = loadImages(dataPath, config, logFile);
+    
+    if isempty(imageData)
+        error('No images loaded. Please check data path and format.');
+    end
+    
+    fprintf('✅ Loaded %d images from %d fingers\n', metadata.totalImages, metadata.actualFingers);
+    
+    %% KROK 4: Wyświetl podsumowanie danych
+    displayDataSummary(metadata);
+    
+    %% KROK 5: Preprocessing pipeline
+    fprintf('\n🔄 Starting preprocessing pipeline...\n');
+    
+    % Inicjalizacja wyników preprocessing
+    preprocessedImages = cell(size(imageData));
+    
+    % Progress bar setup
+    numImages = length(imageData);
+    fprintf('Processing %d images:\n', numImages);
+    
+    for i = 1:numImages
+        % Progress indicator
+        if mod(i, max(1, floor(numImages/10))) == 0 || i == 1
+            fprintf('  Progress: %d/%d (%.1f%%)\n', i, numImages, (i/numImages)*100);
+        end
+        
+        try
+            % Preprocessing dla każdego obrazu
+            preprocessedImages{i} = preprocessing(imageData{i}, logFile);
+            
+        catch ME
+            logWarning(sprintf('Preprocessing failed for image %d: %s', i, ME.message), logFile);
+            % Fallback - pusty obraz
+            preprocessedImages{i} = [];
+        end
+    end
+    
+    fprintf('✅ Preprocessing completed\n');
+    
+    %% KROK 6: Detekcja i ekstrakcja minucji z wizualizacją
+    fprintf('\n🔍 Starting minutiae detection and feature extraction...\n');
+    
+    % Inicjalizacja wyników
+    allMinutiae = cell(size(preprocessedImages));
+    allFeatures = [];
+    validImageIndices = [];
+    
+    fprintf('Detecting minutiae and extracting features:\n');
+    
+    for i = 1:numImages
+        % Progress indicator
+        if mod(i, max(1, floor(numImages/10))) == 0 || i == 1
+            fprintf('  Progress: %d/%d (%.1f%%)\n', i, numImages, (i/numImages)*100);
+        end
+        
+        if isempty(preprocessedImages{i})
+            continue; % Pomiń obrazy które nie zostały przetworzone
+        end
+        
+        try
+            % 1. Detekcja minucji
+            [minutiae, ~] = detectMinutiae(preprocessedImages{i}, config, logFile);
+            
+            if isempty(minutiae)
+                logWarning(sprintf('No minutiae detected for image %d', i), logFile);
+                continue;
+            end
+            
+            % 2. Filtracja minucji
+            filteredMinutiae = filterMinutiae(minutiae, config, logFile);
+            
+            if isempty(filteredMinutiae)
+                logWarning(sprintf('No minutiae remained after filtering for image %d', i), logFile);
+                continue;
+            end
+            
+            % 3. Ekstrakcja cech
+            features = extractMinutiaeFeatures(filteredMinutiae, config, logFile);
+            
+            if isempty(features)
+                logWarning(sprintf('Feature extraction failed for image %d', i), logFile);
+                continue;
+            end
+            
+            % 4. WIZUALIZACJA (dla pierwszych 5 obrazów)
+            if i <= 5 && config.visualization.enabled
+                visualizeProcessingSteps(imageData{i}, preprocessedImages{i}, ...
+                    filteredMinutiae, i, config.visualization.outputDir);
+            end
+            
+            % Zapisz wyniki
+            allMinutiae{i} = filteredMinutiae;
+            allFeatures(end+1, :) = features;
+            validImageIndices(end+1) = i;
+            
+        catch ME
+            logError(sprintf('Minutiae processing failed for image %d: %s', i, ME.message), logFile);
+        end
+    end
+    
+    fprintf('✅ Minutiae detection and feature extraction completed\n');
+    
+    %% KROK 7: Podsumowanie wyników
+    fprintf('\n📊 Processing Results Summary:\n');
+    fprintf('=================================\n');
+    
+    numValidImages = length(validImageIndices);
+    validLabels = labels(validImageIndices);
+    
+    fprintf('Total images processed: %d\n', numImages);
+    fprintf('Successfully processed: %d (%.1f%%)\n', numValidImages, (numValidImages/numImages)*100);
+    fprintf('Failed to process: %d\n', numImages - numValidImages);
+    fprintf('Feature vector size: %d features per image\n', size(allFeatures, 2));
+    
+    % Statystyki per palec
+    fprintf('\nPer-finger statistics:\n');
+    uniqueLabels = unique(validLabels);
+    for finger = uniqueLabels'
+        fingerCount = sum(validLabels == finger);
+        fingerName = metadata.fingerNames{finger};
+        fprintf('  %s: %d images\n', fingerName, fingerCount);
+    end
+    
+    %% KROK 8: Zapisz wyniki z automatyczną normalizacją
+    fprintf('\n💾 Saving results...\n');
+    
+    resultsFile = fullfile('output', sprintf('fingerprint_results_%s.mat', timestamp));
+    
+    % Przygotuj strukturę wyników
+    results = struct();
+    results.metadata = metadata;
+    results.config = config;
+    results.features = allFeatures;
+    results.labels = validLabels;
+    results.validImageIndices = validImageIndices;
+    results.minutiae = allMinutiae(validImageIndices);
+    results.processingTimestamp = timestamp;
+    results.selectedFormat = selectedFormat;
+    results.dataPath = dataPath;
+    
+    % Automatyczna normalizacja cech (Min-Max)
+    fprintf('Normalizing features using Min-Max method...\n');
+    normalizedFeatures = normalizeFeatures(allFeatures, 'minmax');
+    results.normalizedFeatures = normalizedFeatures;
+    results.normalizationMethod = 'minmax';
+    
+    logInfo('Features automatically normalized using Min-Max method', logFile);
+    
+    % Zapisz do pliku
+    save(resultsFile, 'results');
+    fprintf('✅ Results saved to: %s\n', resultsFile);
+    logInfo(sprintf('Results saved to: %s', resultsFile), logFile);
+    
+    %% KROK 9: Zakończenie
+    executionTime = toc(startTime);
+    
+    fprintf('\n🎉 Processing completed successfully!\n');
+    fprintf('Total execution time: %.2f seconds\n', executionTime);
+    fprintf('Feature vector size: %d features per image\n', size(allFeatures, 2));
+    fprintf('Normalized features range: [0, 1]\n');
+    
+    % Zamknij log
+    closeLog(logFile, executionTime);
+    
+    fprintf('\nLog file saved to: %s\n', logFile);
+    fprintf('\n=================================================================\n');
+    
+catch ME
+    % Obsługa błędów globalnych
+    fprintf('\n❌ Application error: %s\n', ME.message);
+    
+    if exist('logFile', 'var') && ~isempty(logFile)
+        logError(sprintf('Application error: %s', ME.message), logFile);
+        logError(sprintf('Stack trace: %s', getReport(ME)), logFile);
+        
+        if exist('startTime', 'var')
+            executionTime = toc(startTime);
+            closeLog(logFile, executionTime);
+        end
+    end
+    
+    fprintf('Check log file for details: %s\n', logFile);
+    rethrow(ME);
+end
+end
+
+%% HELPER FUNCTIONS
+
+function selectedFormat = selectDataFormat()
+% SELECTDATAFORMAT Pozwala użytkownikowi wybrać format danych
+fprintf('Available data formats:\n');
+fprintf('  1. PNG files\n');
+fprintf('  2. TIFF files\n');
+
+while true
+    choice = input('Select format (1 or 2): ');
+    
+    if choice == 1
+        selectedFormat = 'PNG';
+        break;
+    elseif choice == 2
+        selectedFormat = 'TIFF';
+        break;
     else
-        fprintf('\n❌ SYSTEM ZAKOŃCZONY BŁĘDEM!\n');
-        fprintf('Błąd: %s\n', results.error);
-    end
-    
-catch e
-    fprintf('\n❌ KRYTYCZNY BŁĄD: %s\n', e.message);
-    if ~isempty(e.stack)
-        fprintf('Plik: %s, Linia: %d\n', e.stack(1).name, e.stack(1).line);
+        fprintf('Invalid choice. Please enter 1 or 2.\n');
     end
 end
-
-fprintf('\n👋 Koniec pracy systemu.\n');
-
-% Zamknij log
-closeLog(logFile, results.totalTime);
 end
 
-% Funkcja zwracająca 'Tak' lub 'Nie'
-function result = getYesNo(value)
-if value
-    result = 'TAK';
-else
-    result = 'NIE';
+function displayDataSummary(metadata)
+% DISPLAYDATASUMMARY Wyświetla podsumowanie wczytanych danych
+fprintf('\n📋 Data Summary:\n');
+fprintf('================\n');
+fprintf('Total images: %d\n', metadata.totalImages);
+fprintf('Number of fingers: %d\n', metadata.actualFingers);
+fprintf('Format: %s\n', metadata.selectedFormat);
+fprintf('Load timestamp: %s\n', metadata.loadTimestamp);
+
+fprintf('\nFinger breakdown:\n');
+for i = 1:length(metadata.fingerNames)
+    fingerName = metadata.fingerNames{i};
+    % Policz obrazy dla tego palca
+    fingerImageCount = sum(strcmp(metadata.imagePaths, fingerName) | ...
+        contains(metadata.imagePaths, fingerName));
+    fprintf('  %s: %d images\n', fingerName, fingerImageCount);
+end
+end
+
+function createOutputDirectories(config)
+% CREATEOUTPUTDIRECTORIES Tworzy niezbędne katalogi wyjściowe
+dirs = {
+    config.logging.outputDir,
+    config.visualization.outputDir,
+    'output'
+    };
+
+for i = 1:length(dirs)
+    if ~exist(dirs{i}, 'dir')
+        mkdir(dirs{i});
+    end
 end
 end

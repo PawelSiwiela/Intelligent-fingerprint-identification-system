@@ -1,40 +1,37 @@
-function writeLog(message, logLevel, logFile)
+function writeLog(message, level, logFile)
 % WRITELOG Zapisuje komunikat do logu
-%   WRITELOG(message, logLevel, logFile) zapisuje komunikat
-%   do pliku logu i wyświetla go w konsoli.
+%
+% Argumenty:
+%   message - treść komunikatu
+%   level - poziom komunikatu (INFO, WARNING, ERROR, SUCCESS)
+%   logFile - ścieżka do pliku logu (opcjonalnie)
 
-% Utwórz folder logów, jeśli nie istnieje
-[logDir, ~, ~] = fileparts(logFile);
-if ~exist(logDir, 'dir')
-    mkdir(logDir);
-end
+if nargin < 2, level = 'INFO'; end
+if nargin < 3, logFile = []; end
 
-% Dodaj znacznik czasu
+% Formatuj komunikat z datą i poziomem
 timestamp = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+formattedMessage = sprintf('[%s] [%s] %s', timestamp, level, message);
 
-% Formatuj komunikat
-formattedMessage = sprintf('[%s] [%s] %s', timestamp, logLevel, message);
-
-% Otwórz plik w trybie dopisywania
-fid = fopen(logFile, 'a');
-if fid == -1
-    error('Nie można otworzyć pliku logu: %s', logFile);
-end
-
-fprintf(fid, '%s\n', formattedMessage);
-fclose(fid);
-
-% Wyświetl w konsoli z odpowiednim kolorem
-switch upper(logLevel)
-    case 'INFO'
-        fprintf('%s\n', formattedMessage);
-    case 'SUCCESS'
-        fprintf('\033[32m%s\033[0m\n', formattedMessage);  % zielony
-    case 'WARNING'
-        fprintf('\033[33m%s\033[0m\n', formattedMessage);  % żółty
-    case 'ERROR'
-        fprintf('\033[31m%s\033[0m\n', formattedMessage);  % czerwony
-    otherwise
-        fprintf('%s\n', formattedMessage);
+% Zapisz do pliku jeśli podano
+if ~isempty(logFile) && ischar(logFile)
+    try
+        % Sprawdź czy katalog istnieje i utwórz go jeśli nie
+        [logDir, ~, ~] = fileparts(logFile);
+        
+        % Utwórz katalog jeśli nie istnieje i nie jest pusty
+        if ~isempty(logDir) && ~exist(logDir, 'dir')
+            mkdir(logDir);
+        end
+        
+        % Dopisz do pliku
+        fileID = fopen(logFile, 'a');
+        if fileID ~= -1
+            fprintf(fileID, '%s\n', formattedMessage);
+            fclose(fileID);
+        end
+    catch
+        % W przypadku błędu zapisu do logu, po cichu ignoruj
+    end
 end
 end

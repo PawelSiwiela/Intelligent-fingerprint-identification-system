@@ -10,7 +10,7 @@ clc;
 currentDir = fileparts(mfilename('fullpath'));
 
 % Add src directory and all its subdirectories
-addpath(genpath(fullfile(currentDir, 'src_new')));
+addpath(genpath(fullfile(currentDir, 'src')));
 
 fprintf('Added project directories to MATLAB path.\n');
 

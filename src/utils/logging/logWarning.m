@@ -1,7 +1,30 @@
 function logWarning(message, logFile)
-% LOGWARNING Zapisuje ostrzeżenie
-%   LOGWARNING(message, logFile) zapisuje ostrzeżenie
-%   do pliku logu i wyświetla je w konsoli.
+% LOGWARNING Zapisuje ostrzeżenie do loga
+%
+% Argumenty:
+%   message - wiadomość do zapisania
+%   logFile - ścieżka do pliku logów (opcjonalne)
 
-writeLog(message, 'WARNING', logFile);
+if nargin < 2 || isempty(logFile)
+    % Tylko wyświetl na konsoli
+    fprintf('[WARNING] %s\n', message);
+else
+    % Zapisz do pliku i wyświetl
+    timestamp = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+    logEntry = sprintf('[%s] [WARNING] %s\n', timestamp, message);
+    
+    % Wyświetl na konsoli
+    fprintf('%s', logEntry);
+    
+    % Zapisz do pliku
+    try
+        fileID = fopen(logFile, 'a');
+        if fileID ~= -1
+            fprintf(fileID, '%s', logEntry);
+            fclose(fileID);
+        end
+    catch
+        % Ignoruj błędy zapisu do pliku
+    end
+end
 end
