@@ -57,7 +57,7 @@ try
     end
     
     % POPRAWKA: NOWY PODZIAŁ 9/3/2 - WIĘCEJ DANYCH DO TRENINGU!
-    SPLIT_COUNTS = [9, 3, 2]; % Train: 9, Val: 3, Test: 2 per klasa
+    SPLIT_COUNTS = [7, 3, 4]; % Train: 7, Val: 3, Test: 4 per klasa
     fprintf('🔧 Using OPTIMIZED split counts for PatternNet: [%d, %d, %d] per class\n', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3));
     fprintf('   This gives PatternNet +28%% more training data!\n');
     [trainData, valData, testData] = splitDataset(allFeatures, validLabels, metadata, SPLIT_COUNTS);
