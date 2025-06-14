@@ -160,7 +160,7 @@ end
 
 xlabel('Całkowita liczba minucji');
 ylabel('Stosunek E/B'); % ZMIENIONA ETYKIETA
-title('LICZBA MINUCJI vs STOSUNEK E/B', 'FontWeight', 'bold'); % ZMIENIONY TYTUŁ
+title('LICZBA MINUCJI vs STOSUNEK E/B', 'FontSize', 10, 'FontWeight', 'bold'); % ZMNIEJSZONE z 12 na 10
 legend(scatterHandles, fingerNames, 'Location', 'best', 'FontSize', 8);
 grid on;
 
@@ -184,7 +184,7 @@ if size(features, 2) >= 42
     
     xlabel('Gęstość minucji');
     ylabel('Rozprzestrzenienie');
-    title('GĘSTOŚĆ vs ROZPRZESTRZENIENIE', 'FontWeight', 'bold');
+    title('GĘSTOŚĆ vs ROZPRZESTRZENIENIE', 'FontSize', 10, 'FontWeight', 'bold'); % ZMNIEJSZONE z 12 na 10
     legend(scatterHandles2, fingerNames, 'Location', 'best', 'FontSize', 8);
     grid on;
 else
@@ -192,6 +192,7 @@ else
     title('Analiza przestrzenna - brak danych');
 end
 
+% POPRAWIONY TYTUŁ GŁÓWNY
 sgtitle('ANALIZA MINUCJI - ZAAWANSOWANE STATYSTYKI', 'FontSize', 16, 'FontWeight', 'bold');
 
 % Zapisz
@@ -284,7 +285,7 @@ close(gcf);
 end
 
 function createDistributionAnalysis(features, labels, metadata, outputDir)
-% CREATEDISTRIBUTIONANALYSIS - Z lepszą diagnostyką brakujących danych
+% CREATEDISTRIBUTIONANALYSIS - Z PEŁNĄ MACIERZĄ KORELACJI WSZYSTKICH CECH
 
 figure('Position', [100, 100, 1400, 1000]);
 
@@ -435,65 +436,108 @@ catch
     end
 end
 
-%% SUBPLOT 3: Korelacja cech - Z DODATKOWĄ DIAGNOSTYKĄ
+%% SUBPLOT 3: PEŁNA MACIERZ KORELACJI WSZYSTKICH CECH - POPRAWIONA
 subplot(2, 3, 3);
 
-% Wybierz kluczowe cechy do korelacji
-keyFeatures = [27, 28, 29, 30]; % Liczba, endpoints, bifurcations, jakość
-keyFeatures = keyFeatures(keyFeatures <= size(features, 2));
-
-if length(keyFeatures) >= 2
-    % Oblicz stosunek E/B dla wszystkich próbek
-    ratiosAll = features(:, 28) ./ max(features(:, 29), 0.1);
-    ratiosAll(ratiosAll > 20) = 20; % Cap ekstremalne wartości
+% NOWA WERSJA: Użyj WSZYSTKICH cech zamiast tylko wybranych
+try
+    % Usuń próbki z NaN/Inf ze WSZYSTKICH cech
+    validRows = all(isfinite(features), 2) & all(~isnan(features), 2);
+    featuresClean = features(validRows, :);
     
-    % Dodaj stosunek E/B do analizy korelacji
-    featuresWithRatio = [features(:, keyFeatures), ratiosAll];
-    
-    % Usuń próbki z NaN/Inf
-    validRows = all(isfinite(featuresWithRatio), 2);
-    featuresClean = featuresWithRatio(validRows, :);
-    
-    if size(featuresClean, 1) > 3
+    if size(featuresClean, 1) > 3 && size(featuresClean, 2) > 1
+        % Oblicz korelację dla WSZYSTKICH cech
         corrMatrix = corr(featuresClean);
+        numFeatures = size(corrMatrix, 1);
+        
+        % Wyświetl macierz korelacji
         imagesc(corrMatrix);
         
-        % Niestandardowa mapa kolorów
-        n = 64;
-        r = [linspace(1, 1, n/2), linspace(1, 0, n/2)]';
-        g = [linspace(0, 1, n/2), linspace(1, 0, n/2)]';
-        b = [linspace(0, 1, n/2), linspace(1, 1, n/2)]';
-        customColormap = [r, g, b];
-        colormap(customColormap);
+        % Użyj niestandardowej mapy kolorów (niebiesko-biało-czerwonej)
+        cmap = redblue(64);
+        colormap(cmap);
         
         cb = colorbar;
         cb.Label.String = 'Korelacja';
         caxis([-1, 1]);
         
-        % Dodaj wartości
-        for i = 1:size(corrMatrix, 1)
-            for j = 1:size(corrMatrix, 2)
-                if corrMatrix(i, j) > 0
-                    textColor = 'black';
-                else
-                    textColor = 'white';
-                end
-                text(j, i, sprintf('%.2f', corrMatrix(i, j)), ...
-                    'HorizontalAlignment', 'center', 'FontWeight', 'bold', 'Color', textColor);
+        % Stwórz sensowne nazwy cech
+        featureNames = cell(1, numFeatures);
+        for i = 1:numFeatures
+            if i == 1
+                featureNames{i} = 'Endpoints';
+            elseif i == 2
+                featureNames{i} = 'Bifurcations';
+            elseif i <= 5
+                featureNames{i} = sprintf('Jakość_%d', i-2);
+            elseif i <= 10
+                featureNames{i} = sprintf('Orient_%d', i-5);
+            elseif i <= 15
+                featureNames{i} = sprintf('Odlegl_%d', i-10);
+            elseif i <= 20
+                featureNames{i} = sprintf('Gęstość_%d', i-15);
+            else
+                featureNames{i} = sprintf('Cecha_%d', i);
             end
         end
         
-        keyNames = {'Liczba', 'Endpoints', 'Bifurcations', 'Jakość', 'Stosunek E/B'};
-        keyNames = keyNames(1:size(corrMatrix, 1));
+        % Pokaż tylko co kilka etykiet żeby nie było zbyt gęsto
+        stepSize = max(1, floor(numFeatures / 10)); % Maksymalnie 10 etykiet
+        visibleTicks = 1:stepSize:numFeatures;
+        if visibleTicks(end) ~= numFeatures
+            visibleTicks = [visibleTicks, numFeatures]; % Zawsze pokaż ostatnią
+        end
         
-        set(gca, 'XTick', 1:length(keyNames), 'XTickLabel', keyNames, ...
-            'YTick', 1:length(keyNames), 'YTickLabel', keyNames);
+        set(gca, 'XTick', visibleTicks, 'YTick', visibleTicks);
+        set(gca, 'XTickLabel', featureNames(visibleTicks), 'YTickLabel', featureNames(visibleTicks));
         xtickangle(45);
-        title('KORELACJA KLUCZOWYCH CECH', 'FontWeight', 'bold');
+        
+        % Dodaj wartości korelacji w komórkach (tylko dla silnych korelacji)
+        if numFeatures <= 15 % Tylko jeśli nie za dużo cech
+            for i = 1:numFeatures
+                for j = 1:numFeatures
+                    if abs(corrMatrix(i,j)) > 0.5 || i == j % Pokaż tylko silne korelacje i diagonalę
+                        if corrMatrix(i,j) > 0.7
+                            textColor = 'white';
+                        elseif corrMatrix(i,j) < -0.7
+                            textColor = 'white';
+                        else
+                            textColor = 'black';
+                        end
+                        
+                        text(j, i, sprintf('%.2f', corrMatrix(i,j)), ...
+                            'HorizontalAlignment', 'center', 'Color', textColor, ...
+                            'FontSize', 7, 'FontWeight', 'bold');
+                    end
+                end
+            end
+        end
+        
+        title('KORELACJA WSZYSTKICH CECH', 'FontSize', 10, 'FontWeight', 'bold'); % ZMNIEJSZONE
+        
+        % Dodaj informacje o najsilniejszych korelacjach
+        [maxVal, maxIdx] = max(corrMatrix(corrMatrix < 1)); % Wykluczając diagonalę
+        [minVal, minIdx] = min(corrMatrix(:));
+        
+        % Znajdź indeksy dla wartości ekstremalnych
+        [row_max, col_max] = find(corrMatrix == maxVal, 1);
+        [row_min, col_min] = find(corrMatrix == minVal, 1);
+        
+        % Dodaj adnotacje (tylko jeśli są znaczące korelacje)
+        if abs(maxVal) > 0.7 || abs(minVal) > 0.7
+            annotation('textbox', [0.02, 0.02, 0.3, 0.1], ...
+                'String', sprintf('Max: %.2f, Min: %.2f', maxVal, minVal), ...
+                'FontSize', 8, 'EdgeColor', 'none');
+        end
+        
     else
         text(0.5, 0.5, 'Za mało danych do korelacji', 'HorizontalAlignment', 'center');
-        title('KORELACJA - Za mało danych');
+        title('KORELACJA - Za mało danych', 'FontSize', 10, 'FontWeight', 'bold');
     end
+    
+catch ME
+    text(0.5, 0.5, sprintf('Błąd korelacji: %s', ME.message), 'HorizontalAlignment', 'center');
+    title('KORELACJA - Błąd', 'FontSize', 10, 'FontWeight', 'bold');
 end
 
 %% SUBPLOT 4: Endpoints vs Bifurcations per palec
@@ -517,7 +561,7 @@ refLine = plot([0, maxVal], [0, maxVal], 'k:', 'LineWidth', 2, 'DisplayName', 'y
 
 xlabel('Endpoints');
 ylabel('Bifurcations');
-title('ENDPOINTS vs BIFURCATIONS', 'FontWeight', 'bold');
+title('ENDPOINTS vs BIFURCATIONS', 'FontSize', 10, 'FontWeight', 'bold'); % ZMNIEJSZONE
 legend([scatterHandles, refLine], [fingerNames, {'y=x'}], 'Location', 'best', 'FontSize', 8);
 grid on;
 
@@ -539,7 +583,7 @@ if size(features, 2) >= 32
     
     xlabel('Centroid X');
     ylabel('Centroid Y');
-    title('ROZMIESZCZENIE CENTROIDÓW', 'FontWeight', 'bold');
+    title('ROZMIESZCZENIE CENTROIDÓW', 'FontSize', 10, 'FontWeight', 'bold'); % ZMNIEJSZONE
     legend(scatterHandles2, fingerNames, 'Location', 'best', 'FontSize', 8);
     grid on;
 else
@@ -547,7 +591,7 @@ else
     title('Centroids - brak danych');
 end
 
-%% SUBPLOT 6: Statystyki sumaryczne - Z ZABEZPIECZENIAMI
+%% SUBPLOT 6: Statystyki sumaryczne
 subplot(2, 3, 6);
 
 statsData = [];
@@ -575,7 +619,7 @@ if ~isempty(statsData)
     set(gca, 'XTick', 1:length(statsNames), 'XTickLabel', statsNames);
     xtickangle(45);
     ylabel('Wartość');
-    title('STATYSTYKI SUMARYCZNE', 'FontWeight', 'bold');
+    title('STATYSTYKI SUMARYCZNE', 'FontSize', 10, 'FontWeight', 'bold'); % ZMNIEJSZONE
     legend(barHandles, {'Śr. liczba minucji', 'Śr. jakość', 'Śr. stosunek E/B'}, 'Location', 'best');
     grid on;
 else
@@ -588,4 +632,33 @@ sgtitle('ANALIZA ROZKŁADÓW I ZALEŻNOŚCI CECH MINUCJI', 'FontSize', 16, 'Font
 % Zapisz
 saveas(gcf, fullfile(outputDir, 'minutiae_distribution_analysis.png'));
 close(gcf);
+end
+
+function cmap = redblue(n)
+% REDBLUE Tworzy mapę kolorów od niebieskiego przez biały do czerwonego
+%
+% Args:
+%   n - liczba kolorów (domyślnie 256)
+
+if nargin < 1
+    n = 256;
+end
+
+if n == 1
+    cmap = [1 1 1]; % Biały dla jednego koloru
+    return;
+end
+
+% Połowa kolorów: niebieski -> biały
+% Połowa kolorów: biały -> czerwony
+half = floor(n/2);
+
+% Niebieski do białego
+blue_to_white = [linspace(0, 1, half)', linspace(0, 1, half)', ones(half, 1)];
+
+% Biały do czerwonego
+white_to_red = [ones(n-half, 1), linspace(1, 0, n-half)', linspace(1, 0, n-half)'];
+
+% Połącz
+cmap = [blue_to_white; white_to_red];
 end
