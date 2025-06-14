@@ -202,7 +202,7 @@ try
         logWarning(sprintf('Visualization creation failed: %s', ME.message), logFile);
     end
     
-    %% KROK 10: ML PIPELINE (NOWE!)
+    %% KROK 10: ML PIPELINE
     fprintf('\n🤖 Starting ML Pipeline...\n');
     
     % Zapytaj użytkownika czy chce uruchomić ML Pipeline
@@ -226,7 +226,7 @@ try
     
     if runMLPipeline
         try
-            % Uruchom ML Pipeline z obecnymi danymi - CZYSTA DELEGACJA DO MLPIPELINE
+            % Uruchom ML Pipeline z obecnymi danymi
             fprintf('\n🔗 Delegating to MLPipeline...\n');
             MLPipeline(normalizedFeatures, validLabels, metadata, preprocessedImages, validImageIndices);
             

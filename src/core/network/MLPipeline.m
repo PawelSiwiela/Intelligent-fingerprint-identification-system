@@ -56,9 +56,10 @@ try
         fprintf('   %s (label %d): %d samples\n', fingerName, label, count);
     end
     
-    % POPRAWKA: UŻYJ IDENTYCZNYCH STAŁYCH LICZB
-    SPLIT_COUNTS = [7, 3, 4]; % Train: 7, Val: 3, Test: 4 per klasa
-    fprintf('🔧 Using FIXED split counts: [%d, %d, %d] per class\n', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3));
+    % POPRAWKA: NOWY PODZIAŁ 9/3/2 - WIĘCEJ DANYCH DO TRENINGU!
+    SPLIT_COUNTS = [9, 3, 2]; % Train: 9, Val: 3, Test: 2 per klasa
+    fprintf('🔧 Using OPTIMIZED split counts for PatternNet: [%d, %d, %d] per class\n', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3));
+    fprintf('   This gives PatternNet +28%% more training data!\n');
     [trainData, valData, testData] = splitDataset(allFeatures, validLabels, metadata, SPLIT_COUNTS);
     
     %% KROK 2.5: Podział obrazów dla CNN (jeśli dostępne)
@@ -78,8 +79,8 @@ try
             fprintf('   %s (label %d): %d image samples\n', fingerName, label, count);
         end
         
-        % POPRAWKA: UŻYJ IDENTYCZNYCH STAŁYCH LICZB
-        fprintf('🔧 Using IDENTICAL split counts: [%d, %d, %d] per class\n', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3));
+        % POPRAWKA: UŻYJ IDENTYCZNYCH NOWYCH LICZB TAKŻE DLA CNN
+        fprintf('🔧 Using IDENTICAL optimized split counts: [%d, %d, %d] per class\n', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3));
         [trainImages, valImages, testImages] = splitImagesDataset(...
             preprocessedImages, validImageIndices, validLabels, metadata, SPLIT_COUNTS);
         
@@ -110,6 +111,127 @@ try
             mat2str(size(X_train_images)), mat2str(size(X_val_images)), mat2str(size(X_test_images)));
     end
     
+    %% KROK 1.5: LDA REDUKCJA WYMIAROWOŚCI (ZAMIAST PCA)
+    fprintf('\n🔬 APPLYING LDA FOR PATTERNNET\n');
+    fprintf('%s\n', repmat('=', 1, 60));
+    
+    % Pytanie użytkownika
+    fprintf('PatternNet has %d features for %d samples (ratio: %.2f)\n', ...
+        size(allFeatures, 2), size(allFeatures, 1), size(allFeatures, 1)/size(allFeatures, 2));
+    fprintf('Choose dimensionality reduction method:\n');
+    fprintf('  1. MDA - Multiple Discriminant Analysis (SUPERVISED - most stable)\n');
+    fprintf('  2. PCA - Principal Component Analysis (UNSUPERVISED)\n');
+    fprintf('  3. LDA - Linear Discriminant Analysis (SUPERVISED - experimental)\n');
+    fprintf('  4. No reduction - Use all original features\n');
+    
+    while true
+        reductionChoice = input('Select option (1, 2, 3, or 4): ');
+        if ismember(reductionChoice, [1, 2, 3, 4])
+            break;
+        else
+            fprintf('Invalid choice. Please enter 1, 2, 3, or 4.\n');
+        end
+    end
+    
+    originalFeatures = allFeatures;
+    reductionInfo = [];
+    
+    switch reductionChoice
+        case 1
+            % MDA - NOWA OPCJA (NAJSTABILNIEJSZA)
+            fprintf('🔍 Applying MDA (Multiple Discriminant Analysis) for optimal class separation...\n');
+            
+            params = struct('maxComponents', 4); % 5 klas - 1 = 4 max komponenty
+            [reducedFeatures, reductionInfo] = reduceDimensionality(allFeatures, 'mda', params, validLabels);
+            
+            % Użyj zredukowanych cech dla PatternNet
+            allFeatures = reducedFeatures;
+            
+            fprintf('📊 MDA Results:\n');
+            fprintf('   Original dimensions: %d\n', size(originalFeatures, 2));
+            fprintf('   Reduced dimensions: %d\n', size(allFeatures, 2));
+            
+            if isfield(reductionInfo, 'separabilityScore')
+                fprintf('   Class separability: %.3f\n', reductionInfo.separabilityScore);
+            end
+            
+            fprintf('   New samples-to-features ratio: %.2f\n', size(allFeatures, 1)/size(allFeatures, 2));
+            
+            % Wizualizacja MDA
+            try
+                visualizeReduction(originalFeatures, allFeatures, reductionInfo, validLabels, metadata, 'output/figures');
+                fprintf('✅ MDA visualization saved\n');
+            catch
+                fprintf('⚠️  MDA visualization failed\n');
+            end
+            
+        case 2
+            % PCA - UNSUPERVISED REDUCTION
+            fprintf('🔍 Applying PCA (unsupervised) to reduce feature dimensionality...\n');
+            
+            params = struct('varianceThreshold', 0.95, 'maxComponents', 15);
+            [reducedFeatures, reductionInfo] = reduceDimensionality(allFeatures, 'pca', params);
+            
+            % Użyj zredukowanych cech dla PatternNet
+            allFeatures = reducedFeatures;
+            
+            fprintf('📊 PCA Results:\n');
+            fprintf('   Original dimensions: %d\n', size(originalFeatures, 2));
+            fprintf('   Reduced dimensions: %d\n', size(allFeatures, 2));
+            
+            % POPRAWKA: Sprawdź czy pole totalVarianceExplained istnieje
+            if isfield(reductionInfo, 'totalVarianceExplained')
+                fprintf('   Variance preserved: %.1f%%\n', reductionInfo.totalVarianceExplained);
+            else
+                fprintf('   Variance preserved: Not available\n');
+            end
+            
+            fprintf('   New samples-to-features ratio: %.2f\n', size(allFeatures, 1)/size(allFeatures, 2));
+            
+            % Wizualizacja PCA
+            try
+                visualizeReduction(originalFeatures, allFeatures, reductionInfo, validLabels, metadata, 'output/figures');
+                fprintf('✅ PCA visualization saved\n');
+            catch
+                fprintf('⚠️  PCA visualization failed\n');
+            end
+            
+        case 3
+            % LDA - EXPERIMENTAL
+            fprintf('🔍 Applying LDA (supervised) for optimal class separation...\n');
+            
+            params = struct('maxComponents', 4); % 5 klas - 1 = 4 max komponenty
+            [reducedFeatures, reductionInfo] = reduceDimensionality(allFeatures, 'lda', params, validLabels);
+            
+            % Użyj zredukowanych cech dla PatternNet
+            allFeatures = reducedFeatures;
+            
+            fprintf('📊 LDA Results:\n');
+            fprintf('   Original dimensions: %d\n', size(originalFeatures, 2));
+            fprintf('   Reduced dimensions: %d\n', size(allFeatures, 2));
+            
+            % POPRAWKA: Sprawdź czy pole separabilityScore istnieje
+            if isfield(reductionInfo, 'separabilityScore')
+                fprintf('   Class separability: %.3f\n', reductionInfo.separabilityScore);
+            else
+                fprintf('   Class separability: Not available\n');
+            end
+            
+            fprintf('   New samples-to-features ratio: %.2f\n', size(allFeatures, 1)/size(allFeatures, 2));
+            
+            % Wizualizacja LDA
+            try
+                visualizeReduction(originalFeatures, allFeatures, reductionInfo, validLabels, metadata, 'output/figures');
+                fprintf('✅ LDA visualization saved\n');
+            catch
+                fprintf('⚠️  LDA visualization failed\n');
+            end
+            
+        case 4
+            % BEZ REDUKCJI
+            fprintf('📊 Using all %d original features\n', size(allFeatures, 2));
+    end
+    
     %% KROK 3: Wybór strategii optymalizacji
     fprintf('\n🎯 HYPERPARAMETER OPTIMIZATION STRATEGY\n');
     fprintf('%s\n', repmat('=', 1, 60));
@@ -122,30 +244,27 @@ try
         fprintf('Found optimal parameters for: %s\n', strjoin(availableModels, ', '));
         fprintf('\nChoose optimization strategy:\n');
         fprintf('  1. Use saved optimal parameters (FAST - seconds)\n');
-        fprintf('  2. Optimize hyperparameters from scratch (SLOW - minutes)\n');
-        fprintf('  3. Hybrid: Use optimal for available models, optimize others\n');
+        fprintf('  2. Optimize hyperparameters with Random Search (SLOW - minutes)\n');
         
         while true
-            strategy = input('Select strategy (1, 2, or 3): ');
-            if ismember(strategy, [1, 2, 3])
+            strategy = input('Select strategy (1 or 2): ');
+            if ismember(strategy, [1, 2])
                 break;
             else
-                fprintf('Invalid choice. Please enter 1, 2, or 3.\n');
+                fprintf('Invalid choice. Please enter 1 or 2.\n');
             end
         end
     else
-        fprintf('No saved optimal parameters found. Will optimize from scratch.\n');
+        fprintf('No saved optimal parameters found. Will use Random Search optimization.\n');
         strategy = 2; % Force optimization
     end
     
     fprintf('\n📋 Selected strategy: ');
     switch strategy
         case 1
-            fprintf('Use all saved optimal parameters\n');
+            fprintf('Use saved optimal parameters\n');
         case 2
-            fprintf('Optimize all hyperparameters from scratch\n');
-        case 3
-            fprintf('Hybrid approach\n');
+            fprintf('Random Search hyperparameter optimization\n');
     end
     
     %% KROK 4: Optymalizacja hiperparametrów - z wyborem strategii
@@ -162,8 +281,8 @@ try
         shouldOptimize = true;
         optimalParams = [];
         
-        if strategy == 1 || (strategy == 3 && ismember(modelType, availableModels))
-            % Spróbuj załadować optymalne parametry
+        if strategy == 1
+            % STRATEGIA 1: Spróbuj załadować optymalne parametry dla WSZYSTKICH modeli
             [optimalParams, loadSuccess] = loadOptimalParameters(savedModelsDir, modelType);
             
             if loadSuccess
@@ -182,45 +301,52 @@ try
                 fprintf('🎯 Using optimal %s parameters (estimated score: %.2f%%)\n', ...
                     upper(modelType), estimatedScore * 100);
             else
-                fprintf('⚠️  Failed to load optimal parameters for %s. Will optimize.\n', upper(modelType));
-                shouldOptimize = true;
+                fprintf('⚠️  Failed to load optimal parameters for %s.\n', upper(modelType));
+                fprintf('    No optimal parameters found - cannot use strategy 1!\n');
+                fprintf('    Please run optimization first or choose strategy 2.\n');
+                
+                % W strategii 1, jeśli nie można załadować parametrów, pomiń model
+                optimizationResults.(modelType) = struct();
+                optimizationResults.(modelType).bestScore = 0;
+                optimizationResults.(modelType).source = 'failed_load';
+                continue;
             end
+        else
+            % STRATEGIA 2: Zawsze optymalizuj od zera
+            shouldOptimize = true;
         end
         
         if shouldOptimize
-            % Standardowa optymalizacja
+            % Standardowa optymalizacja od zera
             if strcmp(modelType, 'cnn')
-                numTrials = 20;
+                numTrials = 20; % Zmniejszone dla CNN (wolniejsze)
             else
-                numTrials = 50;
+                numTrials = 50; % Standardowe dla PatternNet
             end
             
             fprintf('🔍 Optimizing %s hyperparameters (%d trials)...\n', upper(modelType), numTrials);
             
             if strcmp(modelType, 'cnn') && hasCNNData
-                [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(...
+                [bestHyperparams, bestScore, results] = optimizeHyperparameters(...
                     trainData, valData, modelType, numTrials, imagesData);
-            elseif strcmp(modelType, 'patternnet')
-                [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(...
-                    trainData, valData, modelType, numTrials);
             else
-                fprintf('⚠️  Skipping %s - no data available\n', upper(modelType));
-                continue;
+                [bestHyperparams, bestScore, results] = optimizeHyperparameters(...
+                    trainData, valData, modelType, numTrials);
             end
             
-            optimizationResults.(modelType) = struct();
-            optimizationResults.(modelType).bestHyperparams = bestHyperparams;
-            optimizationResults.(modelType).bestScore = bestScore;
-            optimizationResults.(modelType).allResults = allResults;
-            optimizationResults.(modelType).source = 'optimized';
+            optimizationResults.(modelType) = struct(...
+                'bestHyperparams', bestHyperparams, ...
+                'bestScore', bestScore, ...
+                'allResults', results);
             
             fprintf('\n🎯 Best %s validation accuracy: %.2f%%\n', upper(modelType), bestScore * 100);
         end
+        
     end
     
-    %% KROK 5: Trenuj finalne modele
+    %% KROK 5: Trenuj finalne modele NA TRAIN+VALIDATION
     fprintf('\n%s\n', repmat('=', 1, 60));
-    fprintf('🏁 TRAINING FINAL MODELS\n');
+    fprintf('🏁 TRAINING FINAL MODELS (Train + Validation Data)\n');
     fprintf('%s\n', repmat('=', 1, 60));
     
     finalModels = struct();
@@ -240,13 +366,26 @@ try
         
         try
             if strcmp(modelType, 'cnn') && hasCNNData
-                % CNN - trenuj na obrazach
+                % CNN - trenuj na obrazach (train+val -> test)
+                fprintf('   📊 Using Train+Val images for final training\n');
+                fprintf('   📈 Train images: %d, Val images: %d, Test images: %d\n', ...
+                    size(imagesData.X_train, 4), size(imagesData.X_val, 4), size(imagesData.X_test, 4));
+                
                 [finalModel, trainResults] = trainFinalModelCNN(imagesData, bestHyperparams);
+                
             elseif strcmp(modelType, 'patternnet')
-                % PatternNet - trenuj na cechach
+                % PatternNet - POŁĄCZ train+val dla finalnego treningu
+                fprintf('   📊 Combining Train+Val features for final training\n');
+                fprintf('   📈 Train samples: %d, Val samples: %d, Test samples: %d\n', ...
+                    length(trainData.labels), length(valData.labels), length(testData.labels));
+                
                 combinedTrainData = struct();
                 combinedTrainData.features = [trainData.features; valData.features];
                 combinedTrainData.labels = [trainData.labels; valData.labels];
+                
+                fprintf('   ✅ Combined training set: %d samples (%.1f%% more data)\n', ...
+                    length(combinedTrainData.labels), ...
+                    (length(valData.labels) / length(trainData.labels)) * 100);
                 
                 [finalModel, trainResults] = trainFinalModel(combinedTrainData, testData, modelType, bestHyperparams);
             else
@@ -260,7 +399,9 @@ try
             finalModels.(modelType) = finalModel;
             finalModels.([modelType '_results']) = trainResults;
             
-            fprintf('✅ Final %s test accuracy: %.2f%%\n', upper(modelType), trainResults.testAccuracy * 100);
+            fprintf('✅ Final %s test accuracy: %.2f%% (trained on %s)\n', ...
+                upper(modelType), trainResults.testAccuracy * 100, ...
+                strcmp(modelType, 'cnn'), 'train+val images', 'train+val features');
             
             % Zapisz model jeśli accuracy > 95%
             if trainResults.testAccuracy > 0.95
@@ -269,7 +410,7 @@ try
             end
             
             % POPRAWIONE: Zapisz optymalne parametry przy >95% accuracy I TYLKO jeśli były optymalizowane
-            shouldSaveOptimal = (trainResults.testAccuracy >= 0.95) && ... % >95% accuracy (ZMIENIONE z 1.0)
+            shouldSaveOptimal = (trainResults.testAccuracy >= 0.95) && ... % >95% accuracy
                 strcmp(optimizationResults.(modelType).source, 'optimized'); % Nie z załadowanych
             
             if shouldSaveOptimal
@@ -422,27 +563,37 @@ results.hyperparams = hyperparams;
 end
 
 function [finalModel, results] = trainFinalModelCNN(imagesData, hyperparams)
-% TRAINFINALMODELCNN Trenuje finalny model CNN na obrazach
+% TRAINFINALMODELCNN Trenuje finalny model CNN na TRAIN+VAL -> TEST
 
 results = struct();
 tic;
 
-% Połącz train + val dla finalnego trenowania
+% POŁĄCZ train + val dla finalnego trenowania (LEPSZA PRAKTYKA)
+fprintf('🔗 Combining train and validation sets for final CNN training...\n');
+
 X_combined = cat(4, imagesData.X_train, imagesData.X_val);
 Y_combined = [imagesData.Y_train; imagesData.Y_val];
 
-% Test data
+fprintf('   Combined training set: [%s] (was [%s] + [%s])\n', ...
+    mat2str(size(X_combined)), mat2str(size(imagesData.X_train)), mat2str(size(imagesData.X_val)));
+
+% Test data pozostaje nietknięty
 X_test = imagesData.X_test;
 Y_test = imagesData.Y_test;
 
-% Utwórz CNN
+fprintf('   Test set: [%s] (unchanged)\n', mat2str(size(X_test)));
+
+% Utwórz CNN z finalnymi hiperparametrami
 inputSize = size(X_combined(:,:,:,1));
 cnnStruct = createCNN(hyperparams, 5, inputSize);
 
-% Trenuj
+fprintf('🚀 Training final CNN with combined data...\n');
+
+% Trenuj na train+val
 finalModel = trainNetwork(X_combined, Y_combined, cnnStruct.layers, cnnStruct.options);
 
-% Testuj
+% Testuj TYLKO na test set
+fprintf('🎯 Evaluating on test set...\n');
 predicted = classify(finalModel, X_test);
 results.testAccuracy = sum(predicted == Y_test) / length(Y_test);
 results.predictions = double(predicted);
@@ -451,6 +602,9 @@ results.trueLabels = double(Y_test);
 results.trainTime = toc;
 results.modelType = 'cnn';
 results.hyperparams = hyperparams;
+
+fprintf('📊 Final CNN trained on %d samples, tested on %d samples\n', ...
+    size(X_combined, 4), size(X_test, 4));
 end
 
 function saveHighPerformanceModel(model, results, modelType, hyperparams)

@@ -1,5 +1,7 @@
 function [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(trainData, valData, modelType, numTrials, imagesData)
-% OPTIMIZEHYPERPARAMETERS Optymalizacja hiperparametrów (Random Search + Early Stopping TYLKO przy 95%)
+% OPTIMIZEHYPERPARAMETERS Random Search optymalizacja hiperparametrów
+%
+% PROSTA WERSJA - TYLKO RANDOM SEARCH
 
 if nargin < 4
     numTrials = 50;
@@ -9,29 +11,34 @@ if nargin < 5
     imagesData = [];
 end
 
-fprintf('\n🔍 Starting hyperparameter optimization for %s...\n', upper(modelType));
-fprintf('Number of trials: %d (Random Search with Early Stopping)\n', numTrials);
+fprintf('\n🔍 Starting Random Search optimization for %s...\n', upper(modelType));
+fprintf('Number of trials: %d\n', numTrials);
 
-% EARLY STOPPING PARAMETERS - TYLKO PRZY WYSOKIEJ ACCURACY
-earlyStopThreshold = 0.95;  % Zatrzymaj TYLKO jeśli osiągnie 95% accuracy
+% EARLY STOPPING PARAMETERS
+earlyStopThreshold = 0.95;
 
 % Zakresy hiperparametrów
 ranges = getHyperparameterRanges(modelType);
 
-% Inicjalizacja
+% RANDOM SEARCH
+fprintf('\n🎲 Random Search (%d trials)\n', numTrials);
+
 bestScore = 0;
 bestHyperparams = [];
 allResults = [];
-
-% Random Search z Early Stopping TYLKO przy 95%
-fprintf('\n🎲 Random Search (%d trials) with Early Stopping\n', numTrials);
-fprintf('   Early stop threshold: %.1f%% accuracy (ONLY condition for stopping)\n', earlyStopThreshold * 100);
 
 for trial = 1:numTrials
     fprintf('  Trial %d/%d: ', trial, numTrials);
     
     % Losuj hiperparametry
     hyperparams = sampleRandomHyperparams(ranges, modelType);
+    
+    % DODAJ DEBUG INFO
+    if strcmp(modelType, 'patternnet')
+        fprintf('[%s, %s, lr=%.1e, epochs=%d] ', ...
+            mat2str(hyperparams.hiddenSizes), hyperparams.trainFcn, ...
+            hyperparams.lr, hyperparams.epochs);
+    end
     
     % Trenuj i ewaluuj
     [score, trainTime] = evaluateHyperparams(hyperparams, trainData, valData, modelType, imagesData);
@@ -50,72 +57,100 @@ for trial = 1:numTrials
         bestHyperparams = hyperparams;
         fprintf('🎯 NEW BEST! Score: %.3f (%.1fs)\n', score, trainTime);
         
-        % EARLY STOPPING - TYLKO jeśli osiągnięto doskonały wynik (>=95%)
+        % EARLY STOPPING
         if score >= earlyStopThreshold
-            fprintf('🛑 EARLY STOPPING! Achieved %.1f%% accuracy (>= %.1f%% threshold)\n', ...
-                score * 100, earlyStopThreshold * 100);
-            fprintf('   🎉 EXCELLENT RESULT! Stopping optimization after %d/%d trials\n', trial, numTrials);
-            break;
+            fprintf('🛑 EARLY STOPPING! Achieved %.1f%% accuracy\n', score * 100);
+            
+            % Sortuj wyniki
+            [~, sortIdx] = sort([allResults.score], 'descend');
+            allResults = allResults(sortIdx);
+            return;
         end
     else
         fprintf('Score: %.3f (%.1fs)\n', score, trainTime);
-        % BRAK early stopping przy braku poprawy - kontynuuj wszystkie trials
     end
-end
-
-% Podsumowanie
-fprintf('\n📊 Optimization completed!\n');
-fprintf('Best validation accuracy: %.3f%%\n', bestScore * 100);
-fprintf('Total trials completed: %d/%d\n', length(allResults), numTrials);
-
-if bestScore >= earlyStopThreshold
-    fprintf('🎉 EXCELLENT RESULT! Early stopped due to achieving %.1f%% accuracy\n', earlyStopThreshold * 100);
-else
-    fprintf('📈 Completed all %d trials. Best result: %.1f%%\n', numTrials, bestScore * 100);
 end
 
 % Sortuj wszystkie wyniki
 [~, sortIdx] = sort([allResults.score], 'descend');
 allResults = allResults(sortIdx);
 
+% Podsumowanie
+fprintf('\n📊 Random Search completed!\n');
+fprintf('Best validation accuracy: %.3f%%\n', bestScore * 100);
+fprintf('Total evaluations: %d\n', length(allResults));
+
 % Pokaż top 5
-fprintf('\n🏆 Top %d configurations:\n', min(5, length(allResults)));
+fprintf('\n🏆 Top 5 configurations:\n');
 for i = 1:min(5, length(allResults))
     result = allResults(i);
-    fprintf('  %d. Score: %.3f%% (%.1fs) - %s\n', ...
-        i, result.score*100, result.trainTime, result.method);
+    fprintf('  %d. Score: %.3f%% (%.1fs)\n', ...
+        i, result.score*100, result.trainTime);
 end
 end
+
+%% FUNKCJE POMOCNICZE
 
 function ranges = getHyperparameterRanges(modelType)
-% GETHYPERPARAMETERRANGES Definiuje zakresy hiperparametrów
-
-ranges = struct();
+% GETHYPERPARAMETERRANGES Zwraca zakresy hiperparametrów dla danego modelu
 
 switch lower(modelType)
     case 'patternnet'
-        % PatternNet ranges (bez zmian)
-        ranges.hiddenSizes = {[8], [10], [12], [14], [16], [20]};
-        ranges.trainFcn = {'trainlm', 'trainlm', 'traingdx', 'trainrp'};
-        ranges.lr = [0.00005, 0.0005];
-        ranges.epochs = [50, 300];
-        ranges.mu = [0.001, 0.02];
-        ranges.mu_dec = [0.3, 0.8];
-        ranges.mu_inc = [20, 80];
-        ranges.max_fail = [1, 5];
-        ranges.goal = [0.0, 1e-6];
+        ranges = struct();
+        
+        % ZNACZNIE MNIEJSZE SIECI - przeciw overfittingowi
+        ranges.hiddenSizes = {
+            [5], [8], [10], [12]  % USUŃ duże sieci [15], [20], [25], [30]
+            };
+        
+        % Training functions
+        ranges.trainFcn = {'trainlm', 'trainbr', 'traingd'};
+        
+        % Performance functions
+        ranges.performFcn = {'mse'}; % Tylko MSE dla stabilności
+        
+        % KRÓTSZE TRENOWANIE
+        ranges.epochs = [20, 200]; % Zmniejszone z [20, 200]
+        
+        % WYŻSZY GOAL - zatrzymaj wcześniej
+        ranges.goal = [1e-4, 1e-2]; % Wyższy z [1e-8, 1e-2]
+        
+        % MNIEJSZY max_fail - wcześniejsze zatrzymanie
+        ranges.max_fail = [1, 3]; % Zmniejszone z [1, 8]
+        
+        % WĘŻSZNY zakres LR
+        ranges.lr = [1e-4, 1e-2]; % Zmniejszone z [1e-6, 1e-1]
+        
+        % Szersze zakresy LM parameters
+        ranges.mu = [0.0001, 0.1];
+        ranges.mu_dec = [0.1, 0.9];
+        ranges.mu_inc = [5, 100];
         
     case 'cnn'
-        % 2D CNN RANGES - MAKSYMALNE PRZYSPIESZENIE!
-        ranges.filterSize = [3, 5];                    % ZMNIEJSZONE z [3, 7] do [3, 5]
-        ranges.numFilters1 = [8, 24];                  % ZMNIEJSZONE z [8, 32] do [8, 24]
-        ranges.numFilters2 = [16, 48];                 % ZMNIEJSZONE z [16, 64] do [16, 48]
-        ranges.numFilters3 = [32, 96];                 % ZMNIEJSZONE z [32, 128] do [32, 96]
-        ranges.dropoutRate = [0.2, 0.4];               % ZMNIEJSZONE z [0.2, 0.5] do [0.2, 0.4]
-        ranges.lr = [0.001, 0.01];                     % ZWIĘKSZONE z [0.0001, 0.01] do [0.001, 0.01]
-        ranges.l2reg = [1e-5, 1e-3];                   % ZMNIEJSZONE z [1e-6, 1e-2] do [1e-5, 1e-3]
-        ranges.epochs = [5, 15];                       % DRASTYCZNIE ZMNIEJSZONE z [10, 30] do [5, 15]
-        ranges.miniBatchSize = [4, 12];                % ZMNIEJSZONE z [4, 16] do [4, 12]
+        ranges = struct();
+        
+        % Filter sizes
+        ranges.filterSize = [3, 5, 7];  % Discrete values
+        
+        % Number of filters per layer
+        ranges.numFilters1 = [8, 32];
+        ranges.numFilters2 = [16, 64];
+        ranges.numFilters3 = [32, 128];
+        
+        % Dropout rate
+        ranges.dropoutRate = [0.1, 0.5];
+        
+        % Learning rate
+        ranges.lr = [0.0005, 0.02];  % Log scale
+        
+        % L2 regularization
+        ranges.l2reg = [1e-6, 1e-2];  % Log scale
+        
+        % Epochs
+        ranges.epochs = [5, 40];
+        
+        % Mini batch size
+        ranges.miniBatchSize = [4, 8, 16];  % Discrete values
         
     otherwise
         error('Unknown model type: %s', modelType);
@@ -123,88 +158,68 @@ end
 end
 
 function hyperparams = sampleRandomHyperparams(ranges, modelType)
-% SAMPLERANDOMHYPERPARAMS Inteligentne losowanie hiperparametrów
+% SAMPLERANDOMHYPERPARAMS Losuje hiperparametry z zadanych zakresów
 
 hyperparams = struct();
-fields = fieldnames(ranges);
 
 switch lower(modelType)
     case 'patternnet'
-        % PatternNet sampling (bez zmian)
-        for i = 1:length(fields)
-            fieldName = fields{i};
-            range = ranges.(fieldName);
-            
-            if iscell(range)
-                idx = randi(length(range));
-                hyperparams.(fieldName) = range{idx};
-            elseif length(range) == 2
-                if strcmp(fieldName, 'lr')
-                    optimalLR = 0.000098;
-                    sigma = 0.0001;
-                    sample = normrnd(optimalLR, sigma);
-                    hyperparams.(fieldName) = max(range(1), min(range(2), sample));
-                elseif strcmp(fieldName, 'mu')
-                    optimalMu = 0.008175;
-                    sigma = 0.005;
-                    sample = normrnd(optimalMu, sigma);
-                    hyperparams.(fieldName) = max(range(1), min(range(2), sample));
-                elseif strcmp(fieldName, 'mu_dec')
-                    optimalMuDec = 0.572343;
-                    sigma = 0.15;
-                    sample = normrnd(optimalMuDec, sigma);
-                    hyperparams.(fieldName) = max(range(1), min(range(2), sample));
-                elseif strcmp(fieldName, 'mu_inc')
-                    optimalMuInc = 43.891772;
-                    sigma = 15;
-                    sample = normrnd(optimalMuInc, sigma);
-                    hyperparams.(fieldName) = max(range(1), min(range(2), sample));
-                elseif strcmp(fieldName, 'max_fail')
-                    optimalMaxFail = 2;
-                    sigma = 1;
-                    sample = round(normrnd(optimalMaxFail, sigma));
-                    hyperparams.(fieldName) = max(range(1), min(range(2), sample));
-                elseif strcmp(fieldName, 'epochs')
-                    lambda = 1/100;
-                    sample = exprnd(1/lambda);
-                    hyperparams.(fieldName) = max(range(1), min(range(2), round(sample)));
-                elseif strcmp(fieldName, 'goal')
-                    if range(1) == 0
-                        hyperparams.(fieldName) = 0;
-                    else
-                        logMin = log10(range(1));
-                        logMax = log10(range(2));
-                        logVal = logMin + (logMax - logMin) * rand();
-                        hyperparams.(fieldName) = 10^logVal;
-                    end
-                else
-                    hyperparams.(fieldName) = range(1) + (range(2) - range(1)) * rand();
-                end
-                
-                if any(strcmp(fieldName, {'epochs', 'max_fail'}))
-                    hyperparams.(fieldName) = round(hyperparams.(fieldName));
-                end
-            end
-        end
+        % DODAJ SEED randomization na początku każdego sampling
+        rng('shuffle'); % Nowy seed za każdym razem
         
-        hyperparams.performFcn = 'crossentropy';
-        hyperparams.showWindow = false;
-        hyperparams.showCommandLine = false;
+        % Hidden sizes - WIĘKSZA LOSOWOŚĆ
+        hyperparams.hiddenSizes = ranges.hiddenSizes{randi(length(ranges.hiddenSizes))};
+        
+        % ZAWSZE inne training functions
+        hyperparams.trainFcn = ranges.trainFcn{randi(length(ranges.trainFcn))};
+        
+        % ZAWSZE MSE
+        hyperparams.performFcn = 'mse';
+        
+        % Learning rate (log scale) - WIĘKSZY ZAKRES
+        logLr = log10(ranges.lr(1)) + (log10(ranges.lr(2)) - log10(ranges.lr(1))) * rand();
+        hyperparams.lr = 10^logLr;
+        
+        % Epochs - DODAJ WIĘCEJ RANDOMIZACJI
+        hyperparams.epochs = randi([ranges.epochs(1), ranges.epochs(2)]);
+        
+        % Goal (log scale) - SZERSZY ZAKRES
+        logGoal = log10(ranges.goal(1)) + (log10(ranges.goal(2)) - log10(ranges.goal(1))) * rand();
+        hyperparams.goal = 10^logGoal;
+        
+        % Max fail - WIĘCEJ OPCJI
+        hyperparams.max_fail = randi([ranges.max_fail(1), ranges.max_fail(2)]);
+        
+        % LM parameters - DODAJ WIĘCEJ LOSOWOŚCI
+        hyperparams.mu = ranges.mu(1) + (ranges.mu(2) - ranges.mu(1)) * rand();
+        hyperparams.mu_dec = ranges.mu_dec(1) + (ranges.mu_dec(2) - ranges.mu_dec(1)) * rand();
+        hyperparams.mu_inc = ranges.mu_inc(1) + (ranges.mu_inc(2) - ranges.mu_inc(1)) * rand();
         
     case 'cnn'
-        % 2D CNN SAMPLING
-        hyperparams.filterSize = 3 + round(2 * rand());           % 3-5
-        hyperparams.numFilters1 = 8 + round(16 * rand());         % 8-24
-        hyperparams.numFilters2 = 16 + round(32 * rand());        % 16-48
-        hyperparams.numFilters3 = 32 + round(64 * rand());        % 32-96
-        hyperparams.dropoutRate = 0.2 + 0.2 * rand();             % 0.2-0.4
-        hyperparams.lr = 0.001 + 0.009 * rand();                  % 0.001-0.01
-        hyperparams.l2reg = 1e-5 + (1e-3 - 1e-5) * rand();       % 1e-5 to 1e-3
-        hyperparams.epochs = round(5 + 10 * rand());             % 5-15
-        hyperparams.miniBatchSize = round(4 + 8 * rand());       % 4-12
+        % Filter size - wybierz losowo z dyskretnych wartości
+        hyperparams.filterSize = ranges.filterSize(randi(length(ranges.filterSize)));
         
-        % Walidacja
-        hyperparams.miniBatchSize = max(4, min(12, hyperparams.miniBatchSize));
+        % Number of filters (linear scale)
+        hyperparams.numFilters1 = randi([ranges.numFilters1(1), ranges.numFilters1(2)]);
+        hyperparams.numFilters2 = randi([ranges.numFilters2(1), ranges.numFilters2(2)]);
+        hyperparams.numFilters3 = randi([ranges.numFilters3(1), ranges.numFilters3(2)]);
+        
+        % Dropout rate
+        hyperparams.dropoutRate = ranges.dropoutRate(1) + (ranges.dropoutRate(2) - ranges.dropoutRate(1)) * rand();
+        
+        % Learning rate (log scale)
+        logLr = log10(ranges.lr(1)) + (log10(ranges.lr(2)) - log10(ranges.lr(1))) * rand();
+        hyperparams.lr = 10^logLr;
+        
+        % L2 regularization (log scale)
+        logL2 = log10(ranges.l2reg(1)) + (log10(ranges.l2reg(2)) - log10(ranges.l2reg(1))) * rand();
+        hyperparams.l2reg = 10^logL2;
+        
+        % Epochs
+        hyperparams.epochs = randi([ranges.epochs(1), ranges.epochs(2)]);
+        
+        % Mini batch size - wybierz losowo z dyskretnych wartości
+        hyperparams.miniBatchSize = ranges.miniBatchSize(randi(length(ranges.miniBatchSize)));
         
     otherwise
         error('Unknown model type: %s', modelType);
@@ -212,55 +227,57 @@ end
 end
 
 function [score, trainTime] = evaluateHyperparams(hyperparams, trainData, valData, modelType, imagesData)
-% EVALUATEHYPERPARAMS Trenuje model z danymi hiperparametrami
+% EVALUATEHYPERPARAMS Ewaluuje hiperparametry przez trenowanie i testowanie modelu
+
+tic;
 
 try
-    tic;
-    
     switch lower(modelType)
         case 'patternnet'
-            % PatternNet evaluation (bez zmian)
+            % Trenuj PatternNet
             net = createPatternNet(hyperparams);
             
+            % Przygotuj dane
             X_train = trainData.features';
-            T_train = full(ind2vec(trainData.labels', 5));
-            
-            net = train(net, X_train, T_train);
+            T_train = full(ind2vec(trainData.labels', 5));  % 5 klas
             
             X_val = valData.features';
-            Y_val = net(X_val);
+            
+            % Ustaw podział danych dla sieci
+            net.divideParam.trainInd = 1:size(X_train, 2);
+            net.divideParam.valInd = [];
+            net.divideParam.testInd = [];
+            
+            % Trenuj
+            trainedNet = train(net, X_train, T_train);
+            
+            % Testuj na validation set
+            Y_val = trainedNet(X_val);
             [~, predicted] = max(Y_val, [], 1);
             
-            score = sum(predicted(:) == valData.labels(:)) / length(valData.labels);
+            score = sum(predicted == valData.labels') / length(valData.labels);
             
         case 'cnn'
-            % 2D CNN EVALUATION
-            if isempty(imagesData)
-                error('CNN requires images data');
+            if isempty(imagesData) || ~isfield(imagesData, 'X_train')
+                error('Images data required for CNN');
             end
             
-            % Sprawdź czy mamy wystarczająco danych
-            numTrainImages = size(imagesData.X_train, 4);
-            numValImages = size(imagesData.X_val, 4);
-            
-            if numTrainImages < 4 || numValImages < 2
-                error('Not enough images for CNN training');
+            % CNN training
+            inputSize = size(imagesData.X_train);
+            if length(inputSize) >= 4
+                inputSize = inputSize(1:3);  % [height, width, channels]
+            else
+                error('Invalid image data format for CNN');
             end
             
-            % Dostosuj miniBatchSize do dostępnych danych
-            maxBatchSize = min(hyperparams.miniBatchSize, floor(numTrainImages / 2));
-            hyperparams.miniBatchSize = max(2, maxBatchSize);
-            
-            % Utwórz 2D CNN
-            inputSize = size(imagesData.X_train(:,:,:,1));  % [H, W, C]
             cnnStruct = createCNN(hyperparams, 5, inputSize);
             
-            % Trenuj 2D CNN
-            net = trainNetwork(imagesData.X_train, imagesData.Y_train, ...
+            % Trenuj CNN
+            trainedNet = trainNetwork(imagesData.X_train, imagesData.Y_train, ...
                 cnnStruct.layers, cnnStruct.options);
             
-            % Ewaluuj
-            predicted = classify(net, imagesData.X_val);
+            % Testuj na validation set
+            predicted = classify(trainedNet, imagesData.X_val);
             score = sum(predicted == imagesData.Y_val) / length(imagesData.Y_val);
             
         otherwise
@@ -269,9 +286,14 @@ try
     
     trainTime = toc;
     
+    % Dodaj penalty za bardzo długie trenowanie
+    if trainTime > 30  % Więcej niż 30 sekund
+        score = score * 0.9;  % 10% penalty
+    end
+    
 catch ME
+    fprintf('   ⚠️  Evaluation failed: %s\n', ME.message);
     score = 0;
     trainTime = toc;
-    fprintf('[FAILED: %s] ', ME.message);
 end
 end
