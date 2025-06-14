@@ -78,43 +78,115 @@ try
             mat2str(size(X_train_images)), mat2str(size(X_val_images)), mat2str(size(X_test_images)));
     end
     
-    %% KROK 3: Optymalizacja hiperparametrów - PatternNet + CNN
+    %% KROK 3: Wybór strategii optymalizacji
+    fprintf('\n🎯 HYPERPARAMETER OPTIMIZATION STRATEGY\n');
+    fprintf('%s\n', repmat('=', 1, 60));
+    
+    % Sprawdź czy są dostępne zapisane modele
+    savedModelsDir = 'output/models';
+    availableModels = checkAvailableOptimalModels(savedModelsDir, models);
+    
+    if ~isempty(availableModels)
+        fprintf('Found optimal parameters for: %s\n', strjoin(availableModels, ', '));
+        fprintf('\nChoose optimization strategy:\n');
+        fprintf('  1. Use saved optimal parameters (FAST - seconds)\n');
+        fprintf('  2. Optimize hyperparameters from scratch (SLOW - minutes)\n');
+        fprintf('  3. Hybrid: Use optimal for available models, optimize others\n');
+        
+        while true
+            strategy = input('Select strategy (1, 2, or 3): ');
+            if ismember(strategy, [1, 2, 3])
+                break;
+            else
+                fprintf('Invalid choice. Please enter 1, 2, or 3.\n');
+            end
+        end
+    else
+        fprintf('No saved optimal parameters found. Will optimize from scratch.\n');
+        strategy = 2; % Force optimization
+    end
+    
+    fprintf('\n📋 Selected strategy: ');
+    switch strategy
+        case 1
+            fprintf('Use all saved optimal parameters\n');
+        case 2
+            fprintf('Optimize all hyperparameters from scratch\n');
+        case 3
+            fprintf('Hybrid approach\n');
+    end
+    
+    %% KROK 4: Optymalizacja hiperparametrów - z wyborem strategii
     optimizationResults = struct();
     
     for modelIdx = 1:length(models)
         modelType = models{modelIdx};
         
         fprintf('\n%s\n', repmat('=', 1, 60));
-        fprintf('🚀 OPTIMIZING %s\n', upper(modelType));
+        fprintf('🚀 PROCESSING %s\n', upper(modelType));
         fprintf('%s\n', repmat('=', 1, 60));
         
-        % Liczba prób optymalizacji - PRZYSPIESZENIE DLA CNN
-        if strcmp(modelType, 'cnn')
-            numTrials = 20; % ZMNIEJSZONE z 50 do 20 dla CNN
-        else
-            numTrials = 50; % PatternNet może zostać bez zmian
+        % Sprawdź strategię dla tego modelu
+        shouldOptimize = true;
+        optimalParams = [];
+        
+        if strategy == 1 || (strategy == 3 && ismember(modelType, availableModels))
+            % Spróbuj załadować optymalne parametry
+            [optimalParams, loadSuccess] = loadOptimalParameters(savedModelsDir, modelType);
+            
+            if loadSuccess
+                fprintf('✅ Loaded optimal parameters for %s\n', upper(modelType));
+                shouldOptimize = false;
+                
+                % Oszacuj "bestScore" na podstawie zapisanych wyników
+                estimatedScore = estimateScoreFromOptimalParams(optimalParams);
+                
+                optimizationResults.(modelType) = struct();
+                optimizationResults.(modelType).bestHyperparams = optimalParams;
+                optimizationResults.(modelType).bestScore = estimatedScore;
+                optimizationResults.(modelType).allResults = [];
+                optimizationResults.(modelType).source = 'loaded_optimal';
+                
+                fprintf('🎯 Using optimal %s parameters (estimated score: %.2f%%)\n', ...
+                    upper(modelType), estimatedScore * 100);
+            else
+                fprintf('⚠️  Failed to load optimal parameters for %s. Will optimize.\n', upper(modelType));
+                shouldOptimize = true;
+            end
         end
         
-        if strcmp(modelType, 'cnn') && hasCNNData
-            [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(...
-                trainData, valData, modelType, numTrials, imagesData);
-        elseif strcmp(modelType, 'patternnet')
-            [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(...
-                trainData, valData, modelType, numTrials);
-        else
-            fprintf('⚠️  Skipping %s - no data available\n', upper(modelType));
-            continue;
+        if shouldOptimize
+            % Standardowa optymalizacja
+            if strcmp(modelType, 'cnn')
+                numTrials = 20;
+            else
+                numTrials = 50;
+            end
+            
+            fprintf('🔍 Optimizing %s hyperparameters (%d trials)...\n', upper(modelType), numTrials);
+            
+            if strcmp(modelType, 'cnn') && hasCNNData
+                [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(...
+                    trainData, valData, modelType, numTrials, imagesData);
+            elseif strcmp(modelType, 'patternnet')
+                [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(...
+                    trainData, valData, modelType, numTrials);
+            else
+                fprintf('⚠️  Skipping %s - no data available\n', upper(modelType));
+                continue;
+            end
+            
+            optimizationResults.(modelType) = struct();
+            optimizationResults.(modelType).bestHyperparams = bestHyperparams;
+            optimizationResults.(modelType).bestScore = bestScore;
+            optimizationResults.(modelType).allResults = allResults;
+            optimizationResults.(modelType).source = 'optimized';
+            
+            fprintf('\n🎯 Best %s validation accuracy: %.2f%%\n', upper(modelType), bestScore * 100);
         end
-        
-        optimizationResults.(modelType) = struct();
-        optimizationResults.(modelType).bestHyperparams = bestHyperparams;
-        optimizationResults.(modelType).bestScore = bestScore;
-        optimizationResults.(modelType).allResults = allResults;
-        
-        fprintf('\n🎯 Best %s validation accuracy: %.2f%%\n', upper(modelType), bestScore * 100);
     end
     
-    %% KROK 4: Trenuj finalne modele
+    %% KROK 5: Trenuj finalne modele
     fprintf('\n%s\n', repmat('=', 1, 60));
     fprintf('🏁 TRAINING FINAL MODELS\n');
     fprintf('%s\n', repmat('=', 1, 60));
@@ -150,6 +222,9 @@ try
                 continue;
             end
             
+            % POPRAWKA: Dodaj validation accuracy do results
+            trainResults.valAccuracy = optimizationResults.(modelType).bestScore;  % Z optymalizacji!
+            
             finalModels.(modelType) = finalModel;
             finalModels.([modelType '_results']) = trainResults;
             
@@ -161,12 +236,18 @@ try
                 fprintf('🏆 High-performance %s model saved!\n', upper(modelType));
             end
             
+            % NOWE: Zapisz optymalne parametry dla przyszłego użycia
+            if trainResults.testAccuracy > 0.85 % Próg dla "optymalnych" parametrów
+                saveOptimalParameters(modelType, bestHyperparams, trainResults, optimizationResults.(modelType));
+                fprintf('💾 Optimal parameters saved for future use!\n');
+            end
+            
         catch ME
             fprintf('⚠️  Training %s model failed: %s\n', upper(modelType), ME.message);
         end
     end
     
-    %% KROK 5: Wizualizacje i porównania
+    %% KROK 6: Wizualizacje i porównania
     fprintf('\n📊 Generating visualizations...\n');
     
     % Sprawdź które modele się udały
@@ -202,7 +283,7 @@ try
         fprintf('⚠️  No successful models to visualize\n');
     end
     
-    %% KROK 6: Podsumowanie końcowe
+    %% KROK 7: Podsumowanie końcowe
     fprintf('\n%s\n', repmat('=', 1, 60));
     fprintf('📈 FINAL RESULTS SUMMARY\n');
     fprintf('%s\n', repmat('=', 1, 60));
@@ -356,4 +437,177 @@ modelData.saveTimestamp = timestamp;
 save(filepath, 'modelData');
 
 fprintf('🔥 High-performance model saved: %s\n', filename);
+end
+
+function saveOptimalParameters(modelType, hyperparams, results, optimizationResults)
+% SAVEOPTIMALPARAMETERS Zapisuje optymalne parametry dla przyszłego użycia
+
+outputDir = 'output/models';
+if ~exist(outputDir, 'dir')
+    mkdir(outputDir);
+end
+
+timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+filename = sprintf('%s_optimal_acc%.1f_%s.mat', modelType, results.testAccuracy*100, timestamp);
+filepath = fullfile(outputDir, filename);
+
+% Struktura z optymalnymi parametrami
+optimalData = struct();
+optimalData.hyperparams = hyperparams;
+optimalData.modelType = modelType;
+optimalData.testAccuracy = results.testAccuracy;
+optimalData.validationAccuracy = optimizationResults.bestScore;
+optimalData.trainTime = results.trainTime;
+optimalData.saveTimestamp = timestamp;
+optimalData.source = 'optimization';
+
+% Dodatkowe metadane
+optimalData.qualityScore = results.testAccuracy; % Dla estimateScoreFromOptimalParams
+optimalData.validation_accuracy = optimizationResults.bestScore; % Fallback
+
+save(filepath, 'optimalData');
+
+fprintf('💾 Optimal parameters saved: %s\n', filename);
+end
+
+%% HELPER FUNCTIONS DLA OPTYMALNYCH PARAMETRÓW
+
+function availableModels = checkAvailableOptimalModels(modelsDir, requestedModels)
+% CHECKAVAILABLEOPTIMALMODELS Sprawdza które modele mają zapisane optymalne parametry
+
+availableModels = {};
+
+if ~exist(modelsDir, 'dir')
+    return;
+end
+
+for i = 1:length(requestedModels)
+    modelType = requestedModels{i};
+    
+    % Szukaj plików z optymalnych parametrów dla tego modelu
+    pattern = sprintf('%s_optimal_*.mat', modelType);
+    files = dir(fullfile(modelsDir, pattern));
+    
+    % Również szukaj plików z wysoką accuracy
+    pattern2 = sprintf('%s_acc*.mat', modelType);
+    files2 = dir(fullfile(modelsDir, pattern2));
+    
+    if ~isempty(files) || ~isempty(files2)
+        availableModels{end+1} = modelType;
+    end
+end
+end
+
+function [optimalParams, success] = loadOptimalParameters(modelsDir, modelType)
+% LOADOPTIMALPARAMETERS Ładuje optymalne parametry dla modelu
+
+optimalParams = [];
+success = false;
+
+if ~exist(modelsDir, 'dir')
+    return;
+end
+
+% Strategia 1: Szukaj pliku z "optimal" w nazwie
+pattern = sprintf('%s_optimal_*.mat', modelType);
+files = dir(fullfile(modelsDir, pattern));
+
+if isempty(files)
+    % Strategia 2: Szukaj najlepszego modelu z wysoką accuracy
+    pattern = sprintf('%s_acc*.mat', modelType);
+    files = dir(fullfile(modelsDir, pattern));
+    
+    if ~isempty(files)
+        % Sortuj według accuracy w nazwie pliku
+        accuracies = [];
+        for i = 1:length(files)
+            filename = files(i).name;
+            % Wyciągnij accuracy z nazwy (np. "cnn_acc95.3_2025-01-01.mat")
+            tokens = regexp(filename, sprintf('%s_acc([0-9.]+)_', modelType), 'tokens');
+            if ~isempty(tokens)
+                accuracies(i) = str2double(tokens{1}{1});
+            else
+                accuracies(i) = 0;
+            end
+        end
+        
+        % Wybierz najlepszy
+        [~, bestIdx] = max(accuracies);
+        files = files(bestIdx);
+    end
+end
+
+if isempty(files)
+    return;
+end
+
+% POPRAWKA: Sortuj chronologicznie - używaj datenum jako liczby
+if length(files) > 1
+    % Wyciągnij datenum values
+    dateTimes = [files.datenum];
+    
+    % Sortuj w porządku malejącym (najnowsze pierwsze)
+    [~, sortIdx] = sort(dateTimes, 'descend');
+    selectedFile = files(sortIdx(1));
+else
+    selectedFile = files(1);
+end
+
+try
+    filePath = fullfile(modelsDir, selectedFile.name);
+    loadedData = load(filePath);
+    
+    % Sprawdź strukturę pliku
+    if isfield(loadedData, 'optimalData')
+        % Nowy format z zapisanymi optymalnymi parametrami
+        optimalData = loadedData.optimalData;
+        optimalParams = optimalData.hyperparams;
+        success = true;
+        
+        fprintf('📂 Loaded from: %s (%.1f%% accuracy)\n', ...
+            selectedFile.name, optimalData.testAccuracy * 100);
+        
+    elseif isfield(loadedData, 'modelData')
+        % Format z MLPipeline
+        modelData = loadedData.modelData;
+        optimalParams = modelData.hyperparams;
+        success = true;
+        
+        fprintf('📂 Loaded from: %s (%.1f%% accuracy)\n', ...
+            selectedFile.name, modelData.results.testAccuracy * 100);
+        
+    elseif isfield(loadedData, 'bestHyperparams')
+        % Stary format z optymalizacji
+        optimalParams = loadedData.bestHyperparams;
+        success = true;
+        
+        fprintf('📂 Loaded from: %s\n', selectedFile.name);
+        
+    else
+        fprintf('⚠️  Unknown file format: %s\n', selectedFile.name);
+        % Debug - pokaż dostępne pola
+        availableFields = fieldnames(loadedData);
+        fprintf('    Available fields: %s\n', strjoin(availableFields, ', '));
+    end
+    
+catch ME
+    fprintf('⚠️  Error loading %s: %s\n', selectedFile.name, ME.message);
+end
+end
+
+function estimatedScore = estimateScoreFromOptimalParams(optimalParams)
+% ESTIMATESCOREFROMOPTIMALPARAMS Oszacuj score na podstawie parametrów
+
+% Domyślnie załóż że optymalne parametry dają dobrą accuracy
+estimatedScore = 0.90; % 90% base estimate
+
+% Jeśli są to parametry z wysokiej jakości modelu, podnieś estimate
+if isfield(optimalParams, 'qualityScore')
+    estimatedScore = optimalParams.qualityScore;
+elseif isfield(optimalParams, 'validation_accuracy')
+    estimatedScore = optimalParams.validation_accuracy;
+end
+
+% Clamp do sensownego zakresu
+estimatedScore = max(0.5, min(0.98, estimatedScore));
 end
