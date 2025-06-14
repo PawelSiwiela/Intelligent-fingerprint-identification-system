@@ -42,14 +42,46 @@ try
     
     %% KROK 2: Podział danych dla cech (PatternNet)
     fprintf('\n📊 Splitting FEATURES dataset...\n');
-    [trainData, valData, testData] = splitDataset(allFeatures, validLabels, metadata, [0.7, 0.15, 0.15]);
+    fprintf('🔍 DEBUG: Feature data before split:\n');
+    fprintf('   Total samples: %d\n', size(allFeatures, 1));
+    fprintf('   Feature dimensions: %d\n', size(allFeatures, 2));
+    fprintf('   Unique labels: %s\n', mat2str(unique(validLabels)));
+    
+    % Sprawdź rozkład klas dla cech
+    uniqueLabels_features = unique(validLabels);
+    for i = 1:length(uniqueLabels_features)
+        label = uniqueLabels_features(i);
+        count = sum(validLabels == label);
+        fingerName = metadata.fingerNames{label};
+        fprintf('   %s (label %d): %d samples\n', fingerName, label, count);
+    end
+    
+    % POPRAWKA: UŻYJ IDENTYCZNYCH STAŁYCH LICZB
+    SPLIT_COUNTS = [7, 3, 4]; % Train: 7, Val: 3, Test: 4 per klasa
+    fprintf('🔧 Using FIXED split counts: [%d, %d, %d] per class\n', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3));
+    [trainData, valData, testData] = splitDataset(allFeatures, validLabels, metadata, SPLIT_COUNTS);
     
     %% KROK 2.5: Podział obrazów dla CNN (jeśli dostępne)
     imagesData = [];
     if hasCNNData
         fprintf('\n🖼️  Splitting IMAGES dataset for CNN...\n');
+        fprintf('🔍 DEBUG: Image data before split:\n');
+        fprintf('   Total valid image indices: %d\n', length(validImageIndices));
+        fprintf('   Total preprocessed images: %d\n', length(preprocessedImages));
+        fprintf('   Valid labels for images: %d\n', length(validLabels));
+        
+        % Sprawdź rozkład klas dla obrazów
+        for i = 1:length(uniqueLabels_features)
+            label = uniqueLabels_features(i);
+            count = sum(validLabels == label);
+            fingerName = metadata.fingerNames{label};
+            fprintf('   %s (label %d): %d image samples\n', fingerName, label, count);
+        end
+        
+        % POPRAWKA: UŻYJ IDENTYCZNYCH STAŁYCH LICZB
+        fprintf('🔧 Using IDENTICAL split counts: [%d, %d, %d] per class\n', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3));
         [trainImages, valImages, testImages] = splitImagesDataset(...
-            preprocessedImages, validImageIndices, validLabels, metadata, [0.7, 0.15, 0.15]);
+            preprocessedImages, validImageIndices, validLabels, metadata, SPLIT_COUNTS);
         
         fprintf('\n🔧 Preparing images for CNN training...\n');
         targetSize = [128, 128]; % Rozmiar docelowy obrazów
@@ -236,10 +268,17 @@ try
                 fprintf('🏆 High-performance %s model saved!\n', upper(modelType));
             end
             
-            % NOWE: Zapisz optymalne parametry dla przyszłego użycia
-            if trainResults.testAccuracy > 0.85 % Próg dla "optymalnych" parametrów
+            % POPRAWIONE: Zapisz optymalne parametry przy >95% accuracy I TYLKO jeśli były optymalizowane
+            shouldSaveOptimal = (trainResults.testAccuracy >= 0.95) && ... % >95% accuracy (ZMIENIONE z 1.0)
+                strcmp(optimizationResults.(modelType).source, 'optimized'); % Nie z załadowanych
+            
+            if shouldSaveOptimal
                 saveOptimalParameters(modelType, bestHyperparams, trainResults, optimizationResults.(modelType));
-                fprintf('💾 Optimal parameters saved for future use!\n');
+                fprintf('🎯 EXCELLENT %.1f%% accuracy! Optimal parameters saved for future use!\n', trainResults.testAccuracy * 100);
+            elseif trainResults.testAccuracy >= 0.95 && strcmp(optimizationResults.(modelType).source, 'loaded_optimal')
+                fprintf('🎯 EXCELLENT %.1f%% accuracy achieved with loaded parameters (not re-saving)\n', trainResults.testAccuracy * 100);
+            elseif trainResults.testAccuracy < 0.95
+                fprintf('📊 Test accuracy %.1f%% < 95%% - optimal parameters not saved\n', trainResults.testAccuracy * 100);
             end
             
         catch ME
@@ -440,7 +479,13 @@ fprintf('🔥 High-performance model saved: %s\n', filename);
 end
 
 function saveOptimalParameters(modelType, hyperparams, results, optimizationResults)
-% SAVEOPTIMALPARAMETERS Zapisuje optymalne parametry dla przyszłego użycia
+% SAVEOPTIMALPARAMETERS Zapisuje optymalne parametry przy >95% accuracy
+
+% WALIDACJA: Upewnij się że to rzeczywiście >95% accuracy
+if results.testAccuracy < 0.95
+    fprintf('⚠️  Cannot save optimal parameters - test accuracy %.1f%% < 95%%\n', results.testAccuracy * 100);
+    return;
+end
 
 outputDir = 'output/models';
 if ~exist(outputDir, 'dir')
@@ -448,7 +493,22 @@ if ~exist(outputDir, 'dir')
 end
 
 timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
-filename = sprintf('%s_optimal_acc%.1f_%s.mat', modelType, results.testAccuracy*100, timestamp);
+
+% NOWA NAZWA: Rozróżnij 100% od 95%+
+if results.testAccuracy >= 1.0
+    filename = sprintf('%s_OPTIMAL_100PCT_%s.mat', modelType, timestamp);
+    qualityTag = 'perfect_100pct';
+    qualityNote = 'Perfect 100% test accuracy achieved through optimization';
+elseif results.testAccuracy >= 0.98
+    filename = sprintf('%s_OPTIMAL_98PCT_%s.mat', modelType, timestamp);
+    qualityTag = 'excellent_98pct';
+    qualityNote = 'Excellent 98%+ test accuracy achieved through optimization';
+else
+    filename = sprintf('%s_OPTIMAL_95PCT_%s.mat', modelType, timestamp);
+    qualityTag = 'very_good_95pct';
+    qualityNote = 'Very good 95%+ test accuracy achieved through optimization';
+end
+
 filepath = fullfile(outputDir, filename);
 
 % Struktura z optymalnymi parametrami
@@ -459,15 +519,18 @@ optimalData.testAccuracy = results.testAccuracy;
 optimalData.validationAccuracy = optimizationResults.bestScore;
 optimalData.trainTime = results.trainTime;
 optimalData.saveTimestamp = timestamp;
-optimalData.source = 'optimization';
+optimalData.source = qualityTag; % Tag jakości
+optimalData.isHighQuality = true; % Flag dla łatwego wyszukiwania
 
-% Dodatkowe metadane
-optimalData.qualityScore = results.testAccuracy; % Dla estimateScoreFromOptimalParams
-optimalData.validation_accuracy = optimizationResults.bestScore; % Fallback
+% Dodatkowe metadane dla wysokiej jakości modeli
+optimalData.qualityScore = results.testAccuracy; % Rzeczywisty score
+optimalData.validation_accuracy = optimizationResults.bestScore;
+optimalData.note = qualityNote;
 
 save(filepath, 'optimalData');
 
-fprintf('💾 Optimal parameters saved: %s\n', filename);
+fprintf('🎯 HIGH-QUALITY optimal parameters saved: %s\n', filename);
+fprintf('   These parameters achieved %.1f%% test accuracy!\n', results.testAccuracy * 100);
 end
 
 %% HELPER FUNCTIONS DLA OPTYMALNYCH PARAMETRÓW
@@ -499,7 +562,7 @@ end
 end
 
 function [optimalParams, success] = loadOptimalParameters(modelsDir, modelType)
-% LOADOPTIMALPARAMETERS Ładuje optymalne parametry dla modelu
+% LOADOPTIMALPARAMETERS Ładuje optymalne parametry dla modelu - PREFERUJE NAJWYŻSZĄ ACCURACY
 
 optimalParams = [];
 success = false;
@@ -508,45 +571,69 @@ if ~exist(modelsDir, 'dir')
     return;
 end
 
-% Strategia 1: Szukaj pliku z "optimal" w nazwie
-pattern = sprintf('%s_optimal_*.mat', modelType);
-files = dir(fullfile(modelsDir, pattern));
+% STRATEGIA 1: Priorytet dla plików z 100% accuracy
+pattern_100 = sprintf('%s_OPTIMAL_100PCT_*.mat', modelType);
+files_100 = dir(fullfile(modelsDir, pattern_100));
 
-if isempty(files)
-    % Strategia 2: Szukaj najlepszego modelu z wysoką accuracy
-    pattern = sprintf('%s_acc*.mat', modelType);
-    files = dir(fullfile(modelsDir, pattern));
+% STRATEGIA 2: Pliki z 98%+ accuracy
+pattern_98 = sprintf('%s_OPTIMAL_98PCT_*.mat', modelType);
+files_98 = dir(fullfile(modelsDir, pattern_98));
+
+% STRATEGIA 3: Pliki z 95%+ accuracy
+pattern_95 = sprintf('%s_OPTIMAL_95PCT_*.mat', modelType);
+files_95 = dir(fullfile(modelsDir, pattern_95));
+
+% STRATEGIA 4: Szukaj starych plików z "optimal" w nazwie
+pattern_optimal = sprintf('%s_optimal_*.mat', modelType);
+files_optimal = dir(fullfile(modelsDir, pattern_optimal));
+
+% STRATEGIA 5: Szukaj najlepszego modelu z wysoką accuracy
+pattern_good = sprintf('%s_acc*.mat', modelType);
+files_good = dir(fullfile(modelsDir, pattern_good));
+
+% PRIORYTETYZACJA: 100% -> 98% -> 95% -> optimal -> good
+if ~isempty(files_100)
+    files = files_100;
+    fprintf('🎯 Found PERFECT 100%% accuracy parameters!\n');
+elseif ~isempty(files_98)
+    files = files_98;
+    fprintf('🌟 Found EXCELLENT 98%%+ accuracy parameters!\n');
+elseif ~isempty(files_95)
+    files = files_95;
+    fprintf('⭐ Found VERY GOOD 95%%+ accuracy parameters!\n');
+elseif ~isempty(files_optimal)
+    files = files_optimal;
+    fprintf('📊 Found optimal parameters (unknown accuracy)\n');
+elseif ~isempty(files_good)
+    files = files_good;
+    fprintf('📈 Found good performance parameters\n');
     
-    if ~isempty(files)
-        % Sortuj według accuracy w nazwie pliku
-        accuracies = [];
-        for i = 1:length(files)
-            filename = files(i).name;
-            % Wyciągnij accuracy z nazwy (np. "cnn_acc95.3_2025-01-01.mat")
-            tokens = regexp(filename, sprintf('%s_acc([0-9.]+)_', modelType), 'tokens');
-            if ~isempty(tokens)
-                accuracies(i) = str2double(tokens{1}{1});
-            else
-                accuracies(i) = 0;
-            end
+    % Sortuj według accuracy w nazwie pliku
+    accuracies = [];
+    for i = 1:length(files)
+        filename = files(i).name;
+        tokens = regexp(filename, sprintf('%s_acc([0-9.]+)_', modelType), 'tokens');
+        if ~isempty(tokens)
+            accuracies(i) = str2double(tokens{1}{1});
+        else
+            accuracies(i) = 0;
         end
-        
-        % Wybierz najlepszy
-        [~, bestIdx] = max(accuracies);
-        files = files(bestIdx);
     end
+    
+    % Wybierz najlepszy
+    [~, bestIdx] = max(accuracies);
+    files = files(bestIdx);
+else
+    return;
 end
 
 if isempty(files)
     return;
 end
 
-% POPRAWKA: Sortuj chronologicznie - używaj datenum jako liczby
+% Sortuj chronologicznie - najnowsze pierwsze
 if length(files) > 1
-    % Wyciągnij datenum values
     dateTimes = [files.datenum];
-    
-    % Sortuj w porządku malejącym (najnowsze pierwsze)
     [~, sortIdx] = sort(dateTimes, 'descend');
     selectedFile = files(sortIdx(1));
 else
@@ -559,35 +646,41 @@ try
     
     % Sprawdź strukturę pliku
     if isfield(loadedData, 'optimalData')
-        % Nowy format z zapisanymi optymalnymi parametrami
         optimalData = loadedData.optimalData;
         optimalParams = optimalData.hyperparams;
         success = true;
         
-        fprintf('📂 Loaded from: %s (%.1f%% accuracy)\n', ...
-            selectedFile.name, optimalData.testAccuracy * 100);
+        % KOMUNIKATY dla różnych poziomów accuracy
+        if isfield(optimalData, 'testAccuracy')
+            accuracy = optimalData.testAccuracy * 100;
+            if accuracy >= 100
+                fprintf('📂 Loaded PERFECT parameters: %s (%.1f%% test accuracy!)\n', selectedFile.name, accuracy);
+            elseif accuracy >= 98
+                fprintf('📂 Loaded EXCELLENT parameters: %s (%.1f%% test accuracy!)\n', selectedFile.name, accuracy);
+            elseif accuracy >= 95
+                fprintf('📂 Loaded VERY GOOD parameters: %s (%.1f%% test accuracy!)\n', selectedFile.name, accuracy);
+            else
+                fprintf('📂 Loaded parameters: %s (%.1f%% test accuracy)\n', selectedFile.name, accuracy);
+            end
+        else
+            fprintf('📂 Loaded optimal parameters: %s\n', selectedFile.name);
+        end
         
     elseif isfield(loadedData, 'modelData')
-        % Format z MLPipeline
         modelData = loadedData.modelData;
         optimalParams = modelData.hyperparams;
         success = true;
         
-        fprintf('📂 Loaded from: %s (%.1f%% accuracy)\n', ...
+        fprintf('📂 Loaded model parameters: %s (%.1f%% test accuracy)\n', ...
             selectedFile.name, modelData.results.testAccuracy * 100);
         
     elseif isfield(loadedData, 'bestHyperparams')
-        % Stary format z optymalizacji
         optimalParams = loadedData.bestHyperparams;
         success = true;
-        
-        fprintf('📂 Loaded from: %s\n', selectedFile.name);
+        fprintf('📂 Loaded legacy parameters: %s\n', selectedFile.name);
         
     else
         fprintf('⚠️  Unknown file format: %s\n', selectedFile.name);
-        % Debug - pokaż dostępne pola
-        availableFields = fieldnames(loadedData);
-        fprintf('    Available fields: %s\n', strjoin(availableFields, ', '));
     end
     
 catch ME

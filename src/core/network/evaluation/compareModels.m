@@ -207,9 +207,8 @@ annotation('textbox', [0.02, 0.02, 0.3, 0.05], 'String', ...
 % WIĘCEJ PRZESTRZENI między subplot
 set(gcf, 'PaperPositionMode', 'auto');
 
-% Zapisz z wyższą rozdzielczością
+% TYLKO JEDEN PLIK - usuń duplikat
 saveas(gcf, 'output/figures/model_comparison.png');
-print(gcf, 'output/figures/model_comparison_hires.png', '-dpng', '-r300');
 close(gcf);
 end
 

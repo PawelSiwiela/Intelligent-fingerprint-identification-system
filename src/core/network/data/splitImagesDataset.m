@@ -12,13 +12,54 @@ function [trainData, valData, testData] = splitImagesDataset(preprocessedImages,
 %   trainData, valData, testData - struktury z polami: images, labels, indices
 
 if nargin < 5
-    splitRatio = [0.7, 0.15, 0.15]; % Standardowy podział
+    splitRatio = [7, 3, 4]; % STAŁA LICZBA próbek per klasa!
 end
 
 fprintf('\n🖼️  Creating stratified IMAGES dataset split for CNN...\n');
+fprintf('🔍 IMAGES INPUT DEBUG:\n');
+fprintf('   splitRatio parameter: %s\n', mat2str(splitRatio));
+fprintf('   preprocessedImages length: %d\n', length(preprocessedImages));
+fprintf('   validImageIndices length: %d\n', length(validImageIndices));
+fprintf('   labels length: %d\n', length(labels));
 
-% Normalizuj ratios
-splitRatio = splitRatio / sum(splitRatio);
+% Sprawdź czy to są liczby próbek czy proporcje
+if all(splitRatio <= 1) && abs(sum(splitRatio) - 1) < 0.1
+    % Konwertuj proporcje na stałe liczby
+    fprintf('⚠️  DETECTED PROPORTIONS! Converting [%.3f, %.3f, %.3f] to counts\n', ...
+        splitRatio(1), splitRatio(2), splitRatio(3));
+    
+    % Znajdź minimalną liczbę próbek per klasa
+    uniqueLabels = unique(labels);
+    minSamplesPerClass = inf;
+    for i = 1:length(uniqueLabels)
+        classCount = sum(labels == uniqueLabels(i));
+        minSamplesPerClass = min(minSamplesPerClass, classCount);
+        fprintf('   Class %d: %d samples\n', uniqueLabels(i), classCount);
+    end
+    
+    fprintf('   Minimum samples per class: %d\n', minSamplesPerClass);
+    
+    % Konwertuj proporcje na liczby - KONSERWATYWNIE
+    if minSamplesPerClass >= 14 % 7+3+4
+        splitRatio = [7, 3, 4];
+    elseif minSamplesPerClass >= 9 % 5+2+2
+        splitRatio = [5, 2, 2];
+    elseif minSamplesPerClass >= 6 % 4+1+1
+        splitRatio = [4, 1, 1];
+    else
+        splitRatio = [max(1, floor(minSamplesPerClass/2)), 1, max(1, minSamplesPerClass - floor(minSamplesPerClass/2) - 1)];
+    end
+    
+    fprintf('🔧 Converted to fixed counts: Train=%d, Val=%d, Test=%d per class\n', ...
+        splitRatio(1), splitRatio(2), splitRatio(3));
+else
+    fprintf('📊 Using provided fixed counts: Train=%d, Val=%d, Test=%d per class\n', ...
+        splitRatio(1), splitRatio(2), splitRatio(3));
+end
+
+trainCount = splitRatio(1);
+valCount = splitRatio(2);
+testCount = splitRatio(3);
 
 % Sprawdź czy mamy prawidłowe dane
 if length(validImageIndices) ~= length(labels)
@@ -48,8 +89,8 @@ for i = 1:numClasses
     classIndices = classIndices(randperm(numSamples));
     
     % Oblicz liczby próbek dla każdego zbioru
-    numTrain = max(1, round(numSamples * splitRatio(1))); % Co najmniej 1 próbka
-    numVal = max(1, round(numSamples * splitRatio(2)));
+    numTrain = max(1, trainCount); % Co najmniej 1 próbka
+    numVal = max(1, valCount);
     numTest = max(1, numSamples - numTrain - numVal); % Reszta, co najmniej 1
     
     % Jeśli za mało próbek, dostosuj

@@ -210,21 +210,21 @@ end
 % POPRAWIONE - obliczanie gap ale BEZ opisów o przeuczeniu
 overfitting = valAcc - testAcc;
 
-% USUNIĘTE statusy o przeuczeniu - tylko gap i kolor
+% POPRAWIONE KOLORY - używaj tylko podstawowych nazw kolorów
 if overfitting > 15
-    color = 'red';
+    colorName = 'red';
 elseif overfitting > 8
-    color = 'orange';
+    colorName = 'yellow';  % Zmieniono z 'orange' na 'yellow'
 elseif overfitting >= -5 && overfitting <= 8
-    color = 'green';
+    colorName = 'green';
 else
-    color = 'blue';
+    colorName = 'blue';
 end
 
-% TYLKO GAP - bez opisów
+% TYLKO GAP - bez opisów, z podstawowymi kolorami
 text(1.5, 75, sprintf('Gap: %.1f%%', overfitting), ...
-    'HorizontalAlignment', 'center', 'FontSize', 12, 'Color', color, ...
-    'FontWeight', 'bold', 'BackgroundColor', 'white', 'EdgeColor', color, ...
+    'HorizontalAlignment', 'center', 'FontSize', 12, 'Color', colorName, ...
+    'FontWeight', 'bold', 'BackgroundColor', 'white', 'EdgeColor', colorName, ...
     'Margin', 3);
 
 % USUNIĘTE - żadnych dodatkowych opisów o generalizacji
@@ -282,7 +282,7 @@ end
 mean_f1 = mean(f1score);
 yline(mean_f1, 'r--', 'LineWidth', 2);
 
-% Dodaj tekst z mean F1 w prawym górnym rogu
+% POPRAWIONE KOLORY - używaj tylko podstawowych nazw
 text(numClasses * 0.75, 0.9, sprintf('Mean F1: %.2f', mean_f1), ...
     'FontSize', 10, 'Color', 'red', 'FontWeight', 'bold', ...
     'BackgroundColor', 'white', 'EdgeColor', 'red', 'Margin', 2);
