@@ -1,51 +1,93 @@
 function net = createPatternNet(hyperparams)
-% CREATEPATTERNNET - ZMNIEJSZONE OGRANICZENIA
+% CREATEPATTERNNET Przepisana prosta wersja dla PatternNet
 
-% Ustaw deterministyczne zachowanie
+% Deterministyczne zachowanie
 rng(42, 'twister');
 
-% Walidacja hiddenSizes - USUŃ OGRANICZENIE do 8
-if isfield(hyperparams, 'hiddenSizes')
-    hyperparams.hiddenSizes = round(hyperparams.hiddenSizes);
-    hyperparams.hiddenSizes = max(1, hyperparams.hiddenSizes);
-    
-    % USUŃ: hyperparams.hiddenSizes = min(8, hyperparams.hiddenSizes);
-    % Pozwól na większe sieci
-    hyperparams.hiddenSizes = min(15, hyperparams.hiddenSizes); % Zwiększ limit
-    
-    fprintf('🔧 Hidden sizes validated: %s\n', mat2str(hyperparams.hiddenSizes));
+% Walidacja hiperparametrów
+if ~isfield(hyperparams, 'hiddenSizes') || isempty(hyperparams.hiddenSizes)
+    hyperparams.hiddenSizes = [10]; % Domyślna architektura
 end
 
-% Utwórz sieć
+if ~isfield(hyperparams, 'trainFcn')
+    hyperparams.trainFcn = 'trainlm';
+end
+
+if ~isfield(hyperparams, 'performFcn')
+    hyperparams.performFcn = 'mse';
+end
+
+% Sprawdź hiddenSizes
+hyperparams.hiddenSizes = round(max(1, hyperparams.hiddenSizes));
+fprintf('🔧 Creating PatternNet: %s, %s, %s\n', ...
+    mat2str(hyperparams.hiddenSizes), hyperparams.trainFcn, hyperparams.performFcn);
+
+%% UTWÓRZ SIEĆ
+
 net = patternnet(hyperparams.hiddenSizes, hyperparams.trainFcn);
 
-% Konfiguracja funkcji performance
+% Performance function
 net.performFcn = hyperparams.performFcn;
 
-% MNIEJ RESTRYKCYJNE parametry trenowania
-net.trainParam.epochs = min(50, hyperparams.epochs); % ZWIĘKSZONE z 20 na 50
-net.trainParam.goal = max(1e-5, hyperparams.goal);   % ZMNIEJSZONE z 1e-3 na 1e-5
-net.trainParam.lr = hyperparams.lr;
+%% PARAMETRY TRENOWANIA
+
+% Epochs
+if isfield(hyperparams, 'epochs')
+    net.trainParam.epochs = max(5, min(100, hyperparams.epochs));
+else
+    net.trainParam.epochs = 50;
+end
+
+% Goal
+if isfield(hyperparams, 'goal')
+    net.trainParam.goal = max(1e-6, hyperparams.goal);
+else
+    net.trainParam.goal = 1e-4;
+end
+
+% Learning rate
+if isfield(hyperparams, 'lr')
+    net.trainParam.lr = max(1e-5, min(0.1, hyperparams.lr));
+else
+    net.trainParam.lr = 0.01;
+end
+
+% Max fail
+if isfield(hyperparams, 'max_fail')
+    net.trainParam.max_fail = max(1, hyperparams.max_fail);
+else
+    net.trainParam.max_fail = 3;
+end
+
+% UI settings
 net.trainParam.show = 25;
 net.trainParam.showWindow = false;
 net.trainParam.showCommandLine = false;
 
-% ZREDUKOWANA REGULARYZACJA
-try
-    net.performParam.regularization = 0.01; % ZMNIEJSZONE z 0.1 na 0.01
-catch
-end
+%% LEVENBERG-MARQUARDT PARAMETRY
 
-% MNIEJ AGRESYWNE ZATRZYMANIE
-net.trainParam.max_fail = max(1, hyperparams.max_fail); % Użyj wartości z hyperparams
-
-% LM parametry - mniej restrykcyjne
 if strcmp(hyperparams.trainFcn, 'trainlm')
-    net.trainParam.mu = max(0.001, hyperparams.mu);      % ZMNIEJSZONE z 0.01 na 0.001
-    net.trainParam.mu_dec = max(0.5, hyperparams.mu_dec); % ZMNIEJSZONE z 0.7 na 0.5
-    net.trainParam.mu_inc = min(20, hyperparams.mu_inc);  % ZWIĘKSZONE z 5 na 20
-    net.trainParam.mu_max = 1e10; % Przywrócone z 1e8
+    if isfield(hyperparams, 'mu')
+        net.trainParam.mu = max(0.001, hyperparams.mu);
+    else
+        net.trainParam.mu = 0.001;
+    end
     
+    if isfield(hyperparams, 'mu_dec')
+        net.trainParam.mu_dec = max(0.1, min(0.9, hyperparams.mu_dec));
+    else
+        net.trainParam.mu_dec = 0.1;
+    end
+    
+    if isfield(hyperparams, 'mu_inc')
+        net.trainParam.mu_inc = max(2, hyperparams.mu_inc);
+    else
+        net.trainParam.mu_inc = 10;
+    end
+    
+    net.trainParam.mu_max = 1e10;
+    
+    % Memory reduction
     try
         net.efficiency.memoryReduction = 1;
     catch
@@ -53,22 +95,45 @@ if strcmp(hyperparams.trainFcn, 'trainlm')
     end
 end
 
-% DETERMINISTYCZNE inicjalizowanie
+%% REGULARYZACJA
+
+try
+    net.performParam.regularization = 0.01; % Lekka regularyzacja
+catch
+    % Ignore if not supported
+end
+
+%% INICJALIZACJA
+
 net.initFcn = 'initlay';
+
+% Inicjalizuj warstwy
 for i = 1:length(net.layers)
     net.layers{i}.initFcn = 'initwb';
-    net.inputWeights{i,1}.initFcn = 'rands';
+    
+    % Input weights
+    if i == 1
+        net.inputWeights{i,1}.initFcn = 'rands';
+    end
+    
+    % Layer weights
     if i > 1
         net.layerWeights{i,i-1}.initFcn = 'rands';
     end
 end
 
-% Plotowanie wyłączone
+%% PREPROCESSING
+
+% Input preprocessing
+net.inputs{1}.processFcns = {'removeconstantrows', 'mapminmax'};
+
+% Output preprocessing
+net.outputs{2}.processFcns = {'removeconstantrows', 'mapminmax'};
+
+%% WYŁĄCZ PLOTOWANIE
+
 net.plotFcns = {};
 
-% Normalizacja danych wejściowych
-net.inputs{1}.processFcns = {'removeconstantrows','mapminmax'};
-net.outputs{2}.processFcns = {'removeconstantrows','mapminmax'};
-
-fprintf('🔧 PatternNet configured with balanced parameters\n');
+fprintf('🔧 PatternNet configured: %d epochs, goal=%.1e, lr=%.1e\n', ...
+    net.trainParam.epochs, net.trainParam.goal, net.trainParam.lr);
 end
