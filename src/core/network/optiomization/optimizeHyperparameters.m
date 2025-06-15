@@ -79,10 +79,10 @@ epochsOptions = [20, 25]; % TYLKO sprawdzone wartości
 lrOptions = [5e-4, 1e-3, 2e-3, 5e-3, 1e-2];
 
 % MAGICZNY GOAL!
-goalOptions = [5e-4]; % TYLKO wartość która daje 86.7
+goalOptions = [1e-3, 2e-3]; % TYLKO wartość która daje 86.7
 
 % MAX_FAIL - różny w najlepszych wynikach
-maxFailOptions = [2, 3, 4];
+maxFailOptions = [1, 2, 3];
 
 % Użyj trial number do cyklicznego wyboru z list
 hyperparams = struct();
@@ -95,7 +95,7 @@ rng(trial * 123);
 
 hyperparams.epochs = epochsOptions(randi(length(epochsOptions)));
 hyperparams.lr = lrOptions(randi(length(lrOptions)));
-hyperparams.goal = goalOptions(1); % ZAWSZE 5e-4!
+hyperparams.goal = goalOptions(randi(length(goalOptions)));
 hyperparams.max_fail = maxFailOptions(randi(length(maxFailOptions)));
 
 % LM parametry (nie używane przez trainscg, ale dla kompletności)
