@@ -33,16 +33,16 @@ net.performFcn = hyperparams.performFcn;
 
 % Epochs
 if isfield(hyperparams, 'epochs')
-    net.trainParam.epochs = max(5, min(100, hyperparams.epochs));
+    net.trainParam.epochs = max(5, min(25, hyperparams.epochs)); % ZMNIEJSZONE z min(100, ...) na min(25, ...)
 else
-    net.trainParam.epochs = 50;
+    net.trainParam.epochs = 20; % ZMNIEJSZONE z 50 na 20
 end
 
 % Goal
 if isfield(hyperparams, 'goal')
-    net.trainParam.goal = max(1e-6, hyperparams.goal);
+    net.trainParam.goal = max(1e-4, hyperparams.goal); % ZWIĘKSZONE z 1e-6 na 1e-4
 else
-    net.trainParam.goal = 1e-4;
+    net.trainParam.goal = 1e-3; % ZWIĘKSZONE z 1e-4 na 1e-3
 end
 
 % Learning rate
@@ -56,7 +56,7 @@ end
 if isfield(hyperparams, 'max_fail')
     net.trainParam.max_fail = max(1, hyperparams.max_fail);
 else
-    net.trainParam.max_fail = 3;
+    net.trainParam.max_fail = 1; % TYLKO 1 fail - bardzo wcześnie stop!
 end
 
 % UI settings
@@ -98,7 +98,7 @@ end
 %% REGULARYZACJA
 
 try
-    net.performParam.regularization = 0.01; % Lekka regularyzacja
+    net.performParam.regularization = 0.1; % ZWIĘKSZONE z 0.01 na 0.1!
 catch
     % Ignore if not supported
 end

@@ -61,50 +61,57 @@ end
 %% NOWY PROSTY GENERATOR DLA PATTERNNET
 
 function hyperparams = generatePatternNetHyperparams(trial)
-% GENERATEPATTERNETHYPERPARAMS Proste i różnorodne parametry
+% GENERATEPATTERNETHYPERPARAMS - ZOPTYMALIZOWANY DLA 86.7% SUCCESS
 
-% RÓŻNE ARCHITEKTURY - każdy trial ma inną
-architectures = {
-    [5], [8], [10], [12], [15], [20]};
+% NAJLEPSZE ARCHITEKTURY (w kolejności skuteczności)
+architectures = {[3], [4], [5], [6], [7]};
 
-% RÓŻNE FUNKCJE TRENOWANIA
-trainFunctions = {'trainlm','traingd', 'trainscg'};
+% TYLKO TRAINSCG!
+trainFunctions = {'trainscg'}; % 100% najlepszych wyników
 
-% RÓŻNE PERFORMANCE FUNCTIONS
+% MSE tylko
 performFunctions = {'mse'};
 
-% Użyj trial number dla systematycznej różnorodności
-archIdx = mod(trial-1, length(architectures)) + 1;
-trainIdx = mod(trial-1, length(trainFunctions)) + 1;
-perfIdx = mod(trial-1, length(performFunctions)) + 1;
+% OPTYMALNE EPOCHS - 20-25 sweet spot
+epochsOptions = [20, 25]; % TYLKO sprawdzone wartości
 
+% ZOPTYMALIZOWANE LR - wszystkie skuteczne wartości
+lrOptions = [5e-4, 1e-3, 2e-3, 5e-3, 1e-2];
+
+% MAGICZNY GOAL!
+goalOptions = [5e-4]; % TYLKO wartość która daje 86.7
+
+% MAX_FAIL - różny w najlepszych wynikach
+maxFailOptions = [2, 3, 4];
+
+% Użyj trial number do cyklicznego wyboru z list
 hyperparams = struct();
-hyperparams.hiddenSizes = architectures{archIdx};
-hyperparams.trainFcn = trainFunctions{trainIdx};
-hyperparams.performFcn = performFunctions{perfIdx};
+hyperparams.hiddenSizes = architectures{mod(trial-1, length(architectures)) + 1};
+hyperparams.trainFcn = trainFunctions{1}; % Zawsze trainscg
+hyperparams.performFcn = performFunctions{1}; % Zawsze mse
 
-% Randomizuj pozostałe parametry z seed bazującym na trial
-rng(trial * 123); % Deterministyczny seed per trial
+% Deterministyczny seed per trial
+rng(trial * 123);
 
-hyperparams.epochs = 10 + randi(40);           % 10-50 epochs
-hyperparams.lr = 10^(-4 + rand() * 2);        % 10^(-4) do 10^(-2)
-hyperparams.goal = 10^(-5 + rand() * 2);      % 10^(-5) do 10^(-3)
-hyperparams.max_fail = 1 + randi(4);          % 1-5
+hyperparams.epochs = epochsOptions(randi(length(epochsOptions)));
+hyperparams.lr = lrOptions(randi(length(lrOptions)));
+hyperparams.goal = goalOptions(1); % ZAWSZE 5e-4!
+hyperparams.max_fail = maxFailOptions(randi(length(maxFailOptions)));
 
-% LM parametry
-hyperparams.mu = 0.001 + rand() * 0.02;       % 0.001-0.021
-hyperparams.mu_dec = 0.3 + rand() * 0.5;      % 0.3-0.8
-hyperparams.mu_inc = 5 + rand() * 15;         % 5-20
+% LM parametry (nie używane przez trainscg, ale dla kompletności)
+hyperparams.mu = 0.005;
+hyperparams.mu_dec = 0.3;
+hyperparams.mu_inc = 10;
 
-fprintf('[Arch=%s, Train=%s, Perf=%s, E=%d, LR=%.1e] ', ...
-    mat2str(hyperparams.hiddenSizes), hyperparams.trainFcn(1:4), ...
-    hyperparams.performFcn(1:3), hyperparams.epochs, hyperparams.lr);
+fprintf('[Arch=%s, Train=%s, E=%d, LR=%.1e, Goal=%.1e, MaxFail=%d] ', ...
+    mat2str(hyperparams.hiddenSizes), hyperparams.trainFcn, ...
+    hyperparams.epochs, hyperparams.lr, hyperparams.goal, hyperparams.max_fail);
 end
 
 %% UPROSZCZONA EWALUACJA PATTERNNET
 
 function [score, trainTime] = evaluatePatternNet(hyperparams, trainData, valData)
-% EVALUATEPATTERNNET Prosta ewaluacja bez skomplikowanych podziałów
+% EVALUATEPATTERNNET - UŻYWA GOTOWYCH PODZIAŁÓW
 
 tic;
 
@@ -112,24 +119,24 @@ try
     % 1. Utwórz sieć
     net = createPatternNet(hyperparams);
     
-    % 2. Przygotuj dane treningowe
+    % 2. Przygotuj dane treningowe - UŻYJ TYLKO trainData
     X_train = trainData.features';
     T_train = full(ind2vec(trainData.labels', 5));
     
-    % 3. PROSTY PODZIAŁ - trenuj na train, waliduj wewnętrznie
-    net.divideParam.trainRatio = 0.8;   % 80% danych train do treningu
-    net.divideParam.valRatio = 0.2;     % 20% danych train do walidacji
-    net.divideParam.testRatio = 0;      % 0% - nie używamy wewnętrznego testu
+    % 3. WYŁĄCZ AUTOMATYCZNY PODZIAŁ - używamy zewnętrznych zbiorów
+    net.divideParam.trainRatio = 1.0;   % Wszystkie dane X_train do treningu
+    net.divideParam.valRatio = 0.0;     % Brak wewnętrznej walidacji
+    net.divideParam.testRatio = 0.0;    % Brak wewnętrznego testu
     
-    % 4. Trenuj sieć
+    % 4. Trenuj TYLKO na trainData
     trainedNet = train(net, X_train, T_train);
     
-    % 5. Testuj na ZEWNĘTRZNYCH danych walidacyjnych
+    % 5. Testuj na ZEWNĘTRZNYM valData
     X_val = valData.features';
     Y_val = trainedNet(X_val);
     [~, predicted] = max(Y_val, [], 1);
     
-    % 6. Oblicz accuracy
+    % 6. Oblicz accuracy na validation set
     score = sum(predicted == valData.labels') / length(valData.labels);
     
     trainTime = toc;

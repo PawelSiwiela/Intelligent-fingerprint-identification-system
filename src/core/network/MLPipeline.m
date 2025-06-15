@@ -648,19 +648,22 @@ end
 
 timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
 
-% NOWA NAZWA: Rozróżnij 100% od 95%+
+% POPRAWKA: Użyj MAŁYCH LITER dla nazwy modelu (jak chcesz)
+modelTypeLower = lower(modelType); % cnn zamiast CNN
+
+% POPRAWIONA NAZWA: Dokładnie jak chcesz
 if results.testAccuracy >= 1.0
-    filename = sprintf('%s_OPTIMAL_100PCT_%s.mat', modelType, timestamp);
     qualityTag = 'perfect_100pct';
     qualityNote = 'Perfect 100% test accuracy achieved through optimization';
+    filename = sprintf('%s_OPTIMAL_100PCT_%s.mat', modelTypeLower, timestamp);
 elseif results.testAccuracy >= 0.98
-    filename = sprintf('%s_OPTIMAL_98PCT_%s.mat', modelType, timestamp);
     qualityTag = 'excellent_98pct';
     qualityNote = 'Excellent 98%+ test accuracy achieved through optimization';
+    filename = sprintf('%s_OPTIMAL_98PCT_%s.mat', modelTypeLower, timestamp);
 else
-    filename = sprintf('%s_OPTIMAL_95PCT_%s.mat', modelType, timestamp);
     qualityTag = 'very_good_95pct';
     qualityNote = 'Very good 95%+ test accuracy achieved through optimization';
+    filename = sprintf('%s_OPTIMAL_95PCT_%s.mat', modelTypeLower, timestamp);
 end
 
 filepath = fullfile(outputDir, filename);
@@ -673,11 +676,11 @@ optimalData.testAccuracy = results.testAccuracy;
 optimalData.validationAccuracy = optimizationResults.bestScore;
 optimalData.trainTime = results.trainTime;
 optimalData.saveTimestamp = timestamp;
-optimalData.source = qualityTag; % Tag jakości
-optimalData.isHighQuality = true; % Flag dla łatwego wyszukiwania
+optimalData.source = qualityTag;
+optimalData.isHighQuality = true;
 
 % Dodatkowe metadane dla wysokiej jakości modeli
-optimalData.qualityScore = results.testAccuracy; % Rzeczywisty score
+optimalData.qualityScore = results.testAccuracy;
 optimalData.validation_accuracy = optimizationResults.bestScore;
 optimalData.note = qualityNote;
 
