@@ -64,7 +64,7 @@ function hyperparams = generatePatternNetHyperparams(trial)
 % ULTRA KONSERWATYWNE PARAMETRY dla 95%+
 
 % TYLKO NAJLEPSZE ARCHITEKTURY
-architectures = {[6], [7], [8]}; % TYLKO te które działają dobrze
+architectures = {[5], [10], [15], [20]}; % TYLKO te które działają dobrze
 
 % TYLKO trainscg
 trainFunctions = {'trainscg'};
@@ -111,33 +111,52 @@ end
 %% UPROSZCZONA EWALUACJA PATTERNNET
 
 function [score, trainTime] = evaluatePatternNet(hyperparams, trainData, valData)
-% EVALUATEPATTERNNET - UŻYWA GOTOWYCH PODZIAŁÓW
+% EVALUATEPATTERNNET - NAPRAWIONA WERSJA BEZ BŁĘDNYCH PARAMETRÓW
 
 tic;
 
 try
-    % 1. Utwórz sieć
+    % DETERMINISTYCZNY seed
+    rng(42, 'twister');
+    
+    % 1. Utwórz sieć (już z poprawnym podziałem)
     net = createPatternNet(hyperparams);
     
-    % 2. Przygotuj dane treningowe - UŻYJ TYLKO trainData
+    % 2. Przygotuj dane treningowe
     X_train = trainData.features';
     T_train = full(ind2vec(trainData.labels', 5));
     
-    % 3. WYŁĄCZ AUTOMATYCZNY PODZIAŁ - używamy zewnętrznych zbiorów
-    net.divideParam.trainRatio = 1.0;   % Wszystkie dane X_train do treningu
-    net.divideParam.valRatio = 0.0;     % Brak wewnętrznej walidacji
-    net.divideParam.testRatio = 0.0;    % Brak wewnętrznego testu
+    % DEBUG: Sprawdź dane
+    uniqueTrainLabels = unique(trainData.labels);
+    fprintf('Train classes: %s ', mat2str(uniqueTrainLabels));
     
-    % 4. Trenuj TYLKO na trainData
+    % 3. USUŃ BŁĘDNE PARAMETRY - net.divideFcn już ustawiony w createPatternNet!
+    % NIE ROBIMY TEGO - TO POWODOWAŁO BŁĘDY:
+    % net.divideParam.trainRatio = 1.0;  <-- USUŃ!
+    % net.divideParam.valRatio = 0.0;    <-- USUŃ!
+    % net.divideParam.testRatio = 0.0;   <-- USUŃ!
+    
+    % 4. Trenuj
+    warning('off', 'all');
     trainedNet = train(net, X_train, T_train);
+    warning('on', 'all');
     
-    % 5. Testuj na ZEWNĘTRZNYM valData
+    % 5. Testuj na valData
     X_val = valData.features';
     Y_val = trainedNet(X_val);
     [~, predicted] = max(Y_val, [], 1);
     
-    % 6. Oblicz accuracy na validation set
+    % DEBUG
+    uniquePredicted = unique(predicted);
+    fprintf('Predicted: %s ', mat2str(uniquePredicted));
+    
+    % 6. Accuracy
     score = sum(predicted == valData.labels') / length(valData.labels);
+    
+    % DEBUG ostrzeżenie
+    if length(uniquePredicted) == 1
+        fprintf('⚠️ SINGLE CLASS! ');
+    end
     
     trainTime = toc;
     

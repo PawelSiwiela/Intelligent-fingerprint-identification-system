@@ -29,7 +29,7 @@ try
     
     startTime = tic;
     
-    %% KROK 2: WYBÓR ŹRÓDŁA DANYCH (NOWE!)
+    %% KROK 2: WYBÓR ŹRÓDŁA DANYCH
     fprintf('\n📂 Data source selection...\n');
     [useMatFiles, matFilePath, selectedFormat] = selectDataSource();
     
@@ -42,15 +42,13 @@ try
         logInfo(sprintf('Loading original images - format: %s', selectedFormat), logFile);
     end
     
-    %% KROK 3: Wczytywanie danych
-    fprintf('\n📥 Loading data...\n');
-    
+    %% KROK 3: GŁÓWNA LOGIKA - w zależności od źródła danych
     if useMatFiles
-        % WCZYTAJ Z PLIKU .MAT
-        fprintf('Loading preprocessed data from .mat file...\n');
-        [preprocessedImages, allMinutiae, allFeatures, labels, metadata] = loadProcessedData(matFilePath);
+        %% ŚCIEŻKA A: Wczytaj z .mat i przejdź do ML
+        fprintf('\n📥 Loading preprocessed data...\n');
+        [preprocessedImages, allMinutiae, normalizedFeatures, labels, metadata] = loadProcessedData(matFilePath);
         
-        if isempty(allFeatures)
+        if isempty(normalizedFeatures)
             error('Failed to load data from .mat file or file contains no features.');
         end
         
@@ -58,213 +56,42 @@ try
         validImageIndices = 1:length(labels);
         
         % Normalizuj cechy jeśli potrzeba
-        if max(allFeatures(:)) > 1 || min(allFeatures(:)) < 0
+        if max(normalizedFeatures(:)) > 1 || min(normalizedFeatures(:)) < 0
             fprintf('🔧 Normalizing loaded features...\n');
-            normalizedFeatures = normalizeFeatures(allFeatures, 'minmax');
-        else
-            normalizedFeatures = allFeatures;
+            normalizedFeatures = normalizeFeatures(normalizedFeatures, 'minmax');
         end
         
         fprintf('✅ Loaded %d samples from .mat file\n', length(labels));
-        
-        % Pomiń preprocessing - dane już przetworzone
-        skipToML = true;
+        displayDataSummary(metadata, true);
         
     else
-        % TRADYCYJNE WCZYTYWANIE OBRAZÓW
-        dataPath = 'data';
-        
-        fprintf('Loading %s images from: %s\n', selectedFormat, dataPath);
-        [imageData, labels, metadata] = loadImages(dataPath, config, logFile);
-        
-        if isempty(imageData)
-            error('No images loaded. Please check data path and format.');
-        end
-        
-        fprintf('✅ Loaded %d images from %d fingers\n', metadata.totalImages, metadata.actualFingers);
-        skipToML = false;
-    end
-    
-    %% KROK 4: Wyświetl podsumowanie danych
-    displayDataSummary(metadata, useMatFiles);
-    
-    if ~skipToML
-        %% KROK 5-9: TRADYCYJNY PREPROCESSING (tylko dla oryginalnych obrazów)
-        
-        %% KROK 5: Preprocessing pipeline
+        %% ŚCIEŻKA B: Pełny preprocessing
         fprintf('\n🔄 Starting preprocessing pipeline...\n');
         
-        % Inicjalizacja wyników preprocessing
-        preprocessedImages = cell(size(imageData));
+        % DELEGUJ DO PreprocessingPipeline
+        [normalizedFeatures, labels, metadata, preprocessedImages, validImageIndices] = ...
+            PreprocessingPipeline(selectedFormat, config, logFile);
         
-        % Progress bar setup
-        numImages = length(imageData);
-        fprintf('Processing %d images:\n', numImages);
-        
-        for i = 1:numImages
-            % Progress indicator
-            if mod(i, max(1, floor(numImages/10))) == 0 || i == 1
-                fprintf('  Progress: %d/%d (%.1f%%)\n', i, numImages, (i/numImages)*100);
-            end
-            
-            try
-                % Preprocessing dla każdego obrazu
-                preprocessedImages{i} = preprocessing(imageData{i}, logFile);
-                
-            catch ME
-                logWarning(sprintf('Preprocessing failed for image %d: %s', i, ME.message), logFile);
-                % Fallback - pusty obraz
-                preprocessedImages{i} = [];
-            end
+        if isempty(normalizedFeatures)
+            error('Preprocessing failed - no features extracted.');
         end
         
-        fprintf('✅ Preprocessing completed\n');
+        displayDataSummary(metadata, false);
         
-        %% KROK 6: Detekcja i ekstrakcja minucji z wizualizacją
-        fprintf('\n🔍 Starting minutiae detection and feature extraction...\n');
-        
-        % Inicjalizacja wyników
-        allMinutiae = cell(size(preprocessedImages));
-        allFeatures = [];
-        validImageIndices = [];
-        
-        fprintf('Detecting minutiae and extracting features:\n');
-        
-        for i = 1:numImages
-            % Progress indicator
-            if mod(i, max(1, floor(numImages/10))) == 0 || i == 1
-                fprintf('  Progress: %d/%d (%.1f%%)\n', i, numImages, (i/numImages)*100);
-            end
-            
-            if isempty(preprocessedImages{i})
-                continue; % Pomiń obrazy które nie zostały przetworzone
-            end
-            
-            try
-                % 1. Detekcja minucji
-                [minutiae, ~] = detectMinutiae(preprocessedImages{i}, config, logFile);
-                
-                if isempty(minutiae)
-                    logWarning(sprintf('No minutiae detected for image %d', i), logFile);
-                    continue;
-                end
-                
-                % 2. Filtracja minucji
-                filteredMinutiae = filterMinutiae(minutiae, config, logFile);
-                
-                if isempty(filteredMinutiae)
-                    logWarning(sprintf('No minutiae remained after filtering for image %d', i), logFile);
-                    continue;
-                end
-                
-                % 3. Ekstrakcja cech
-                features = extractMinutiaeFeatures(filteredMinutiae, config, logFile);
-                
-                if isempty(features)
-                    logWarning(sprintf('Feature extraction failed for image %d', i), logFile);
-                    continue;
-                end
-                
-                % 4. WIZUALIZACJA (dla pierwszych 5 obrazów)
-                if i <= 5 && config.visualization.enabled
-                    visualizeProcessingSteps(imageData{i}, preprocessedImages{i}, ...
-                        filteredMinutiae, i, config.visualization.outputDir);
-                end
-                
-                % Zapisz wyniki
-                allMinutiae{i} = filteredMinutiae;
-                allFeatures(end+1, :) = features;
-                validImageIndices(end+1) = i;
-                
-            catch ME
-                logError(sprintf('Minutiae processing failed for image %d: %s', i, ME.message), logFile);
-            end
-        end
-        
-        fprintf('✅ Minutiae detection and feature extraction completed\n');
-        
-        %% KROK 7: Podsumowanie wyników
-        fprintf('\n📊 Processing Results Summary:\n');
-        fprintf('=================================\n');
-        
-        numValidImages = length(validImageIndices);
-        validLabels = labels(validImageIndices);
-        
-        fprintf('Total images processed: %d\n', numImages);
-        fprintf('Successfully processed: %d (%.1f%%)\n', numValidImages, (numValidImages/numImages)*100);
-        fprintf('Failed to process: %d\n', numImages - numValidImages);
-        fprintf('Feature vector size: %d features per image\n', size(allFeatures, 2));
-        
-        % Statystyki per palec
-        fprintf('\nPer-finger statistics:\n');
-        uniqueLabels = unique(validLabels);
-        for finger = uniqueLabels'
-            fingerCount = sum(validLabels == finger);
-            fingerName = metadata.fingerNames{finger};
-            fprintf('  %s: %d images\n', fingerName, fingerCount);
-        end
-        
-        %% KROK 8: Normalizacja cech
-        fprintf('\n🔧 Normalizing features...\n');
-        
-        % Automatyczna normalizacja cech (Min-Max)
-        fprintf('Normalizing features using Min-Max method...\n');
-        normalizedFeatures = normalizeFeatures(allFeatures, 'minmax');
-        
-        logInfo('Features automatically normalized using Min-Max method', logFile);
-        
-        %% KROK 9: WIZUALIZACJE CECH MINUCJI
-        fprintf('\n📊 Creating minutiae features visualizations...\n');
-        
-        try
-            if numValidImages >= 10 % Minimum próbek dla sensownych wizualizacji
-                % TYLKO znormalizowane cechy - lepsze do wizualizacji i porównan
-                visualizeMinutiaeFeatures(normalizedFeatures, validLabels, metadata, config.visualization.outputDir);
-                
-                fprintf('✅ Minutiae features visualizations completed\n');
-            else
-                fprintf('⚠️  Skipping visualizations - need at least 10 samples (have %d)\n', numValidImages);
-            end
-        catch ME
-            fprintf('⚠️  Visualization creation failed: %s\n', ME.message);
-            logWarning(sprintf('Visualization creation failed: %s', ME.message), logFile);
-        end
+        %% OPCJA ZAPISU DANYCH ANONIMOWYCH
+        offerDataSaving(preprocessedImages, [], normalizedFeatures, validImageIndices, labels, metadata, logFile);
     end
     
-    %% KROK 10: ML PIPELINE (dla obu ścieżek)
-    fprintf('\n🤖 Starting ML Pipeline...\n');
+    %% KROK 4: ML PIPELINE (dla obu ścieżek)
+    fprintf('\n🤖 Machine Learning Pipeline...\n');
     
-    % Zapytaj użytkownika czy chce uruchomić ML Pipeline
-    fprintf('Do you want to run ML Pipeline for model training and evaluation?\n');
-    fprintf('  1. Yes - Run full ML Pipeline (training, optimization, evaluation)\n');
-    fprintf('  2. No - Skip ML Pipeline\n');
-    
-    while true
-        choice = input('Select option (1 or 2): ');
-        
-        if choice == 1
-            runMLPipeline = true;
-            break;
-        elseif choice == 2
-            runMLPipeline = false;
-            break;
-        else
-            fprintf('Invalid choice. Please enter 1 or 2.\n');
-        end
-    end
-    
-    if runMLPipeline
+    % Zapytaj użytkownika
+    if askUserForMLPipeline()
         try
-            % Uruchom ML Pipeline z obecnymi danymi
             fprintf('\n🔗 Delegating to MLPipeline...\n');
             
-            if useMatFiles
-                % Dla plików .mat - przekaż tylko dostępne dane
-                MLPipeline(normalizedFeatures, labels, metadata, preprocessedImages, validImageIndices);
-            else
-                % Dla oryginalnych obrazów - pełne dane
-                MLPipeline(normalizedFeatures, labels(validImageIndices), metadata, preprocessedImages, validImageIndices);
-            end
+            % DELEGUJ DO MLPipeline - TYLKO ML, BEZ PREPROCESSINGU
+            MLPipeline(normalizedFeatures, labels, metadata, preprocessedImages, validImageIndices);
             
             fprintf('✅ ML Pipeline completed successfully!\n');
         catch ME
@@ -275,23 +102,17 @@ try
         fprintf('⏭️  ML Pipeline skipped by user\n');
     end
     
-    %% KROK 11: Zakończenie
+    %% KROK 5: Zakończenie
     executionTime = toc(startTime);
     
     fprintf('\n🎉 Processing completed successfully!\n');
     fprintf('Total execution time: %.2f seconds\n', executionTime);
     fprintf('Feature vector size: %d features per image\n', size(normalizedFeatures, 2));
-    fprintf('Normalized features range: [0, 1]\n');
     
     if useMatFiles
         fprintf('Loaded samples from .mat file: %d\n', length(labels));
     else
-        fprintf('Images successfully processed: %d/%d\n', length(validImageIndices), length(imageData));
-    end
-    
-    if runMLPipeline
-        fprintf('ML models saved to: output/models/\n');
-        fprintf('Model comparisons saved to: output/figures/\n');
+        fprintf('Images successfully processed: %d/%d\n', length(validImageIndices), metadata.totalImages);
     end
     
     % Zamknij log
@@ -299,49 +120,6 @@ try
     
     fprintf('\nLog file saved to: %s\n', logFile);
     fprintf('\n=================================================================\n');
-    
-    %% KROK 13: ZAPISZ ANONIMOWE DANE (tylko dla oryginalnych obrazów)
-    if ~useMatFiles
-        % SPRAWDŹ CZY JUŻ ISTNIEJĄ PLIKI .MAT
-        matFilesDir = 'output/anonymized_data';
-        existingMats = [];
-        if exist(matFilesDir, 'dir')
-            existingMats = dir(fullfile(matFilesDir, 'complete_anonymized_dataset_*.mat'));
-        end
-        
-        if ~isempty(existingMats)
-            fprintf('\n📋 Found existing .mat files:\n');
-            for i = 1:length(existingMats)
-                fileInfo = dir(fullfile(matFilesDir, existingMats(i).name));
-                fprintf('  %s (%.1f MB, %s)\n', existingMats(i).name, ...
-                    fileInfo.bytes/1024/1024, datestr(fileInfo.datenum));
-            end
-            
-            fprintf('\n💾 Do you want to save NEW anonymized data? (existing files will remain) (y/n): ');
-        else
-            fprintf('\n💾 Do you want to save anonymized data for sharing? (y/n): ');
-        end
-        
-        saveAnonymized = input('', 's');
-        
-        if strcmpi(saveAnonymized, 'y') || strcmpi(saveAnonymized, 'yes')
-            fprintf('\n🔒 Saving anonymized data (no original biometric data)...\n');
-            try
-                saveProcessedData(preprocessedImages, allMinutiae, allFeatures, ...
-                    validImageIndices, labels, metadata, 'output/anonymized_data');
-                
-                fprintf('✅ Anonymized data saved successfully!\n');
-                fprintf('🎓 Safe to send to professor - contains no original biometric data!\n');
-            catch ME
-                fprintf('⚠️  Failed to save anonymized data: %s\n', ME.message);
-                logWarning(sprintf('Anonymized data save failed: %s', ME.message), logFile);
-            end
-        else
-            fprintf('⏭️  Anonymized data export skipped\n');
-        end
-    else
-        fprintf('\n💾 Data already in .mat format - no need to save anonymized data\n');
-    end
     
 catch ME
     % Obsługa błędów globalnych
@@ -362,7 +140,7 @@ catch ME
 end
 end
 
-%% NOWA FUNKCJA - WYBÓR ŹRÓDŁA DANYCH
+%% HELPER FUNCTIONS (pozostają w App.m)
 
 function [useMatFiles, matFilePath, selectedFormat] = selectDataSource()
 % SELECTDATASOURCE Wybór między oryginalnymi obrazami a plikami .mat
@@ -560,5 +338,66 @@ for i = 1:length(dirs)
     if ~exist(dirs{i}, 'dir')
         mkdir(dirs{i});
     end
+end
+end
+
+function runML = askUserForMLPipeline()
+% ASKUSERFORMLPIPELINE Pyta użytkownika o ML Pipeline
+fprintf('Do you want to run ML Pipeline for model training and evaluation?\n');
+fprintf('  1. Yes - Run full ML Pipeline (training, optimization, evaluation)\n');
+fprintf('  2. No - Skip ML Pipeline\n');
+
+while true
+    choice = input('Select option (1 or 2): ');
+    
+    if choice == 1
+        runML = true;
+        break;
+    elseif choice == 2
+        runML = false;
+        break;
+    else
+        fprintf('Invalid choice. Please enter 1 or 2.\n');
+    end
+end
+end
+
+function offerDataSaving(preprocessedImages, allMinutiae, allFeatures, validImageIndices, labels, metadata, logFile)
+% OFFERDATASAVING Oferuje zapis danych anonimowych
+matFilesDir = 'output/anonymized_data';
+existingMats = [];
+if exist(matFilesDir, 'dir')
+    existingMats = dir(fullfile(matFilesDir, 'complete_anonymized_dataset_*.mat'));
+end
+
+if ~isempty(existingMats)
+    fprintf('\n📋 Found existing .mat files:\n');
+    for i = 1:length(existingMats)
+        fileInfo = dir(fullfile(matFilesDir, existingMats(i).name));
+        fprintf('  %s (%.1f MB, %s)\n', existingMats(i).name, ...
+            fileInfo.bytes/1024/1024, datestr(fileInfo.datenum));
+    end
+    
+    fprintf('\n💾 Do you want to save NEW anonymized data? (existing files will remain) (y/n): ');
+else
+    fprintf('\n💾 Do you want to save anonymized data for sharing? (y/n): ');
+end
+
+saveAnonymized = input('', 's');
+
+if strcmpi(saveAnonymized, 'y') || strcmpi(saveAnonymized, 'yes')
+    fprintf('\n🔒 Saving anonymized data (no original biometric data)...\n');
+    try
+        saveProcessedData(preprocessedImages, allMinutiae, allFeatures, ...
+            validImageIndices, labels, metadata, 'output/anonymized_data');
+        
+        fprintf('✅ Anonymized data saved successfully!\n');
+        fprintf('🎓 Safe to send to professor - contains no original biometric data!\n');
+    catch ME
+        fprintf('⚠️  Failed to save anonymized data: %s\n', ME.message);
+        logWarning(sprintf('Anonymized data save failed: %s', ME.message), logFile);
+    end
+else
+    fprintf('⏭️  Anonymized data export skipped\n');
 end
 end

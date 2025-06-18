@@ -1,12 +1,5 @@
 function MLPipeline(allFeatures, validLabels, metadata, preprocessedImages, validImageIndices)
-% MLPIPELINE Główny pipeline uczenia maszynowego dla klasyfikacji palców - PatternNet + CNN
-%
-% Args:
-%   allFeatures - cechy minucji dla PatternNet
-%   validLabels - etykiety klas
-%   metadata - metadane z nazwami palców
-%   preprocessedImages - obrazy dla CNN (opcjonalne)
-%   validImageIndices - indeksy prawidłowych obrazów (opcjonalne)
+% MLPIPELINE NAPRAWIONY - JEDEN PODZIAŁ DANYCH
 
 fprintf('\n');
 fprintf('=================================================================\n');
@@ -32,60 +25,49 @@ end
 
 try
     %% KROK 1: Podsumowanie danych
-    fprintf('\n📂 Data Summary:\n');
-    fprintf('✅ Loaded %d samples with %d features\n', size(allFeatures, 1), size(allFeatures, 2));
+    fprintf('\n📂 Received Data Summary:\n');
+    fprintf('✅ Features: %d samples with %d features\n', size(allFeatures, 1), size(allFeatures, 2));
     
     if hasCNNData
-        fprintf('✅ Loaded %d preprocessed images for CNN\n', length(preprocessedImages));
+        fprintf('✅ Images: %d preprocessed images for CNN\n', length(preprocessedImages));
         fprintf('✅ Valid image indices: %d\n', length(validImageIndices));
     end
     
-    %% KROK 2: Podział danych dla cech (PatternNet)
-    fprintf('\n📊 Splitting FEATURES dataset...\n');
-    fprintf('🔍 DEBUG: Feature data before split:\n');
-    fprintf('   Total samples: %d\n', size(allFeatures, 1));
-    fprintf('   Feature dimensions: %d\n', size(allFeatures, 2));
-    fprintf('   Unique labels: %s\n', mat2str(unique(validLabels)));
-    
-    % Sprawdź rozkład klas dla cech
-    uniqueLabels_features = unique(validLabels);
-    for i = 1:length(uniqueLabels_features)
-        label = uniqueLabels_features(i);
+    % Sprawdź rozkład klas
+    uniqueLabels = unique(validLabels);
+    for i = 1:length(uniqueLabels)
+        label = uniqueLabels(i);
         count = sum(validLabels == label);
         fingerName = metadata.fingerNames{label};
         fprintf('   %s (label %d): %d samples\n', fingerName, label, count);
     end
     
-    % POPRAWKA: NOWY PODZIAŁ 9/2/3 - WIĘCEJ DANYCH DO TRENINGU!
+    %% KROK 2: Redukcja wymiarowości (PRZED podziałem!)
+    fprintf('\n🔬 DIMENSIONALITY REDUCTION FOR PATTERNNET\n');
+    fprintf('%s\n', repmat('=', 1, 60));
+    
+    [allFeatures, reductionInfo] = askForDimensionalityReduction(allFeatures, validLabels, metadata);
+    
+    %% KROK 3: JEDEN PODZIAŁ DANYCH (po redukcji)
+    fprintf('\n📊 Splitting dataset...\n');
+    
+    % SPLIT COUNTS dla optymalizacji
     SPLIT_COUNTS = [9, 2, 3]; % Train: 9, Val: 2, Test: 3 per klasa
-    fprintf('🔧 Using OPTIMIZED split counts for PatternNet: [%d, %d, %d] per class\n', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3));
-    fprintf('   This gives PatternNet +28%% more training data!\n');
+    fprintf('🔧 Using optimized split: [%d, %d, %d] per class\n', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3));
+    
+    % JEDEN PODZIAŁ dla cech (PatternNet)
     [trainData, valData, testData] = splitDataset(allFeatures, validLabels, metadata, SPLIT_COUNTS);
     
-    %% KROK 2.5: Podział obrazów dla CNN (jeśli dostępne)
+    % Podział obrazów dla CNN (jeśli dostępne) - UŻYWA TYCH SAMYCH INDEKSÓW
     imagesData = [];
     if hasCNNData
-        fprintf('\n🖼️  Splitting IMAGES dataset for CNN...\n');
-        fprintf('🔍 DEBUG: Image data before split:\n');
-        fprintf('   Total valid image indices: %d\n', length(validImageIndices));
-        fprintf('   Total preprocessed images: %d\n', length(preprocessedImages));
-        fprintf('   Valid labels for images: %d\n', length(validLabels));
+        fprintf('\n🖼️  Splitting images for CNN (using same indices)...\n');
         
-        % Sprawdź rozkład klas dla obrazów
-        for i = 1:length(uniqueLabels_features)
-            label = uniqueLabels_features(i);
-            count = sum(validLabels == label);
-            fingerName = metadata.fingerNames{label};
-            fprintf('   %s (label %d): %d image samples\n', fingerName, label, count);
-        end
-        
-        % POPRAWKA: UŻYJ IDENTYCZNYCH NOWYCH LICZB TAKŻE DLA CNN
-        fprintf('🔧 Using IDENTICAL optimized split counts: [%d, %d, %d] per class\n', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3));
         [trainImages, valImages, testImages] = splitImagesDataset(...
             preprocessedImages, validImageIndices, validLabels, metadata, SPLIT_COUNTS);
         
         fprintf('\n🔧 Preparing images for CNN training...\n');
-        targetSize = [128, 128]; % Rozmiar docelowy obrazów
+        targetSize = [128, 128];
         
         % Konwertuj obrazy do 4D arrays
         X_train_images = prepareImagesForCNN(trainImages.images, targetSize, true);
@@ -106,133 +88,11 @@ try
         imagesData.X_test = X_test_images;
         imagesData.Y_test = Y_test_images;
         
-        fprintf('✅ Images prepared for CNN:\n');
-        fprintf('  Train: [%s], Val: [%s], Test: [%s]\n', ...
+        fprintf('✅ Images prepared for CNN: Train:[%s], Val:[%s], Test:[%s]\n', ...
             mat2str(size(X_train_images)), mat2str(size(X_val_images)), mat2str(size(X_test_images)));
     end
     
-    %% KROK 1.5: LDA REDUKCJA WYMIAROWOŚCI (ZAMIAST PCA)
-    fprintf('\n🔬 APPLYING LDA FOR PATTERNNET\n');
-    fprintf('%s\n', repmat('=', 1, 60));
-    
-    % Pytanie użytkownika
-    fprintf('PatternNet has %d features for %d samples (ratio: %.2f)\n', ...
-        size(allFeatures, 2), size(allFeatures, 1), size(allFeatures, 1)/size(allFeatures, 2));
-    fprintf('Choose dimensionality reduction method:\n');
-    fprintf('  1. MDA - Multiple Discriminant Analysis (SUPERVISED - most stable)\n');
-    fprintf('  2. PCA - Principal Component Analysis (UNSUPERVISED)\n');
-    fprintf('  3. LDA - Linear Discriminant Analysis (SUPERVISED - experimental)\n');
-    fprintf('  4. No reduction - Use all original features\n');
-    
-    while true
-        reductionChoice = input('Select option (1, 2, 3, or 4): ');
-        if ismember(reductionChoice, [1, 2, 3, 4])
-            break;
-        else
-            fprintf('Invalid choice. Please enter 1, 2, 3, or 4.\n');
-        end
-    end
-    
-    originalFeatures = allFeatures;
-    reductionInfo = [];
-    
-    switch reductionChoice
-        case 1
-            % MDA - NOWA OPCJA (NAJSTABILNIEJSZA)
-            fprintf('🔍 Applying MDA (Multiple Discriminant Analysis) for optimal class separation...\n');
-            
-            params = struct('maxComponents', 4); % 5 klas - 1 = 4 max komponenty
-            [reducedFeatures, reductionInfo] = reduceDimensionality(allFeatures, 'mda', params, validLabels);
-            
-            % Użyj zredukowanych cech dla PatternNet
-            allFeatures = reducedFeatures;
-            
-            fprintf('📊 MDA Results:\n');
-            fprintf('   Original dimensions: %d\n', size(originalFeatures, 2));
-            fprintf('   Reduced dimensions: %d\n', size(allFeatures, 2));
-            
-            if isfield(reductionInfo, 'separabilityScore')
-                fprintf('   Class separability: %.3f\n', reductionInfo.separabilityScore);
-            end
-            
-            fprintf('   New samples-to-features ratio: %.2f\n', size(allFeatures, 1)/size(allFeatures, 2));
-            
-            % Wizualizacja MDA
-            try
-                visualizeReduction(originalFeatures, allFeatures, reductionInfo, validLabels, metadata, 'output/figures');
-                fprintf('✅ MDA visualization saved\n');
-            catch
-                fprintf('⚠️  MDA visualization failed\n');
-            end
-            
-        case 2
-            % PCA - UNSUPERVISED REDUCTION
-            fprintf('🔍 Applying PCA (unsupervised) to reduce feature dimensionality...\n');
-            
-            params = struct('varianceThreshold', 0.95, 'maxComponents', 15);
-            [reducedFeatures, reductionInfo] = reduceDimensionality(allFeatures, 'pca', params);
-            
-            % Użyj zredukowanych cech dla PatternNet
-            allFeatures = reducedFeatures;
-            
-            fprintf('📊 PCA Results:\n');
-            fprintf('   Original dimensions: %d\n', size(originalFeatures, 2));
-            fprintf('   Reduced dimensions: %d\n', size(allFeatures, 2));
-            
-            % POPRAWKA: Sprawdź czy pole totalVarianceExplained istnieje
-            if isfield(reductionInfo, 'totalVarianceExplained')
-                fprintf('   Variance preserved: %.1f%%\n', reductionInfo.totalVarianceExplained);
-            else
-                fprintf('   Variance preserved: Not available\n');
-            end
-            
-            fprintf('   New samples-to-features ratio: %.2f\n', size(allFeatures, 1)/size(allFeatures, 2));
-            
-            % Wizualizacja PCA
-            try
-                visualizeReduction(originalFeatures, allFeatures, reductionInfo, validLabels, metadata, 'output/figures');
-                fprintf('✅ PCA visualization saved\n');
-            catch
-                fprintf('⚠️  PCA visualization failed\n');
-            end
-            
-        case 3
-            % LDA - EXPERIMENTAL
-            fprintf('🔍 Applying LDA (supervised) for optimal class separation...\n');
-            
-            params = struct('maxComponents', 4); % 5 klas - 1 = 4 max komponenty
-            [reducedFeatures, reductionInfo] = reduceDimensionality(allFeatures, 'lda', params, validLabels);
-            
-            % Użyj zredukowanych cech dla PatternNet
-            allFeatures = reducedFeatures;
-            
-            fprintf('📊 LDA Results:\n');
-            fprintf('   Original dimensions: %d\n', size(originalFeatures, 2));
-            fprintf('   Reduced dimensions: %d\n', size(allFeatures, 2));
-            
-            % POPRAWKA: Sprawdź czy pole separabilityScore istnieje
-            if isfield(reductionInfo, 'separabilityScore')
-                fprintf('   Class separability: %.3f\n', reductionInfo.separabilityScore);
-            else
-                fprintf('   Class separability: Not available\n');
-            end
-            
-            fprintf('   New samples-to-features ratio: %.2f\n', size(allFeatures, 1)/size(allFeatures, 2));
-            
-            % Wizualizacja LDA
-            try
-                visualizeReduction(originalFeatures, allFeatures, reductionInfo, validLabels, metadata, 'output/figures');
-                fprintf('✅ LDA visualization saved\n');
-            catch
-                fprintf('⚠️  LDA visualization failed\n');
-            end
-            
-        case 4
-            % BEZ REDUKCJI
-            fprintf('📊 Using all %d original features\n', size(allFeatures, 2));
-    end
-    
-    %% KROK 3: Wybór strategii optymalizacji
+    %% KROK 4: Wybór strategii optymalizacji
     fprintf('\n🎯 HYPERPARAMETER OPTIMIZATION STRATEGY\n');
     fprintf('%s\n', repmat('=', 1, 60));
     
@@ -267,7 +127,7 @@ try
             fprintf('Random Search hyperparameter optimization\n');
     end
     
-    %% KROK 4: Optymalizacja hiperparametrów - z wyborem strategii
+    %% KROK 6: Optymalizacja hiperparametrów - z wyborem strategii
     optimizationResults = struct();
     
     for modelIdx = 1:length(models)
@@ -337,7 +197,8 @@ try
             optimizationResults.(modelType) = struct(...
                 'bestHyperparams', bestHyperparams, ...
                 'bestScore', bestScore, ...
-                'allResults', results);
+                'allResults', results, ...
+                'source', 'optimized'); % DODANE: source field!
             
             fprintf('\n🎯 Best %s validation accuracy: %.2f%%\n', upper(modelType), bestScore * 100);
         end
@@ -393,8 +254,12 @@ try
                 continue;
             end
             
-            % POPRAWKA: Dodaj validation accuracy do results
-            trainResults.valAccuracy = optimizationResults.(modelType).bestScore;  % Z optymalizacji!
+            % POPRAWKA: Dodaj validation accuracy do results - BEZPIECZNE
+            if isfield(optimizationResults, modelType) && isfield(optimizationResults.(modelType), 'bestScore')
+                trainResults.valAccuracy = optimizationResults.(modelType).bestScore;  % Z optymalizacji!
+            else
+                trainResults.valAccuracy = 0; % Fallback dla nieprawidłowych danych
+            end
             
             finalModels.(modelType) = finalModel;
             finalModels.([modelType '_results']) = trainResults;
@@ -411,12 +276,17 @@ try
             
             % POPRAWIONE: Zapisz optymalne parametry przy >95% accuracy I TYLKO jeśli były optymalizowane
             shouldSaveOptimal = (trainResults.testAccuracy >= 0.95) && ... % >95% accuracy
+                isfield(optimizationResults, modelType) && ...  % DODANE: sprawdź czy pole istnieje
+                isfield(optimizationResults.(modelType), 'source') && ... % DODANE: sprawdź czy source istnieje
                 strcmp(optimizationResults.(modelType).source, 'optimized'); % Nie z załadowanych
             
             if shouldSaveOptimal
                 saveOptimalParameters(modelType, bestHyperparams, trainResults, optimizationResults.(modelType));
                 fprintf('🎯 EXCELLENT %.1f%% accuracy! Optimal parameters saved for future use!\n', trainResults.testAccuracy * 100);
-            elseif trainResults.testAccuracy >= 0.95 && strcmp(optimizationResults.(modelType).source, 'loaded_optimal')
+            elseif trainResults.testAccuracy >= 0.95 && ...
+                    isfield(optimizationResults, modelType) && ...
+                    isfield(optimizationResults.(modelType), 'source') && ...
+                    strcmp(optimizationResults.(modelType).source, 'loaded_optimal')
                 fprintf('🎯 EXCELLENT %.1f%% accuracy achieved with loaded parameters (not re-saving)\n', trainResults.testAccuracy * 100);
             elseif trainResults.testAccuracy < 0.95
                 fprintf('📊 Test accuracy %.1f%% < 95%% - optimal parameters not saved\n', trainResults.testAccuracy * 100);
@@ -765,7 +635,7 @@ elseif ~isempty(files_good)
     files = files_good;
     fprintf('📈 Found good performance parameters\n');
     
-    % Sortuj według accuracy w nazwie pliku
+    % Sortuj według accuracy w nazwie
     accuracies = [];
     for i = 1:length(files)
         filename = files(i).name;
@@ -860,4 +730,67 @@ end
 
 % Clamp do sensownego zakresu
 estimatedScore = max(0.5, min(0.98, estimatedScore));
+end
+
+function [reducedFeatures, reductionInfo] = askForDimensionalityReduction(allFeatures, validLabels, metadata)
+% ASKFORDIMENSIONALITYREDUCTION Pyta użytkownika o redukcję wymiarowości - BEZ LDA
+
+fprintf('PatternNet has %d features for %d samples (ratio: %.2f)\n', ...
+    size(allFeatures, 2), size(allFeatures, 1), size(allFeatures, 1)/size(allFeatures, 2));
+fprintf('Choose dimensionality reduction method:\n');
+fprintf('  1. MDA - Multiple Discriminant Analysis (SUPERVISED - most stable)\n');
+fprintf('  2. PCA - Principal Component Analysis (UNSUPERVISED)\n');
+fprintf('  3. No reduction - Use all original features\n');
+
+while true
+    reductionChoice = input('Select option (1, 2, or 3): ');
+    if ismember(reductionChoice, [1, 2, 3])
+        break;
+    else
+        fprintf('Invalid choice. Please enter 1, 2, or 3.\n');
+    end
+end
+
+originalFeatures = allFeatures;
+reductionInfo = [];
+
+switch reductionChoice
+    case 1 % MDA
+        fprintf('🔍 Applying MDA (Multiple Discriminant Analysis)...\n');
+        params = struct('maxComponents', 4);
+        [reducedFeatures, reductionInfo] = reduceDimensionality(allFeatures, 'mda', params, validLabels);
+        
+        fprintf('📊 MDA Results: %d -> %d features\n', size(originalFeatures, 2), size(reducedFeatures, 2));
+        
+        try
+            visualizeReduction(originalFeatures, reducedFeatures, reductionInfo, validLabels, metadata, 'output/figures');
+            fprintf('✅ MDA visualization saved\n');
+        catch
+            fprintf('⚠️  MDA visualization failed\n');
+        end
+        
+    case 2 % PCA
+        fprintf('🔍 Applying PCA (unsupervised)...\n');
+        params = struct('varianceThreshold', 0.95, 'maxComponents', 15);
+        [reducedFeatures, reductionInfo] = reduceDimensionality(allFeatures, 'pca', params);
+        
+        fprintf('📊 PCA Results: %d -> %d features\n', size(originalFeatures, 2), size(reducedFeatures, 2));
+        
+        try
+            visualizeReduction(originalFeatures, reducedFeatures, reductionInfo, validLabels, metadata, 'output/figures');
+            fprintf('✅ PCA visualization saved\n');
+        catch
+            fprintf('⚠️  PCA visualization failed\n');
+        end
+        
+    case 3 % BEZ REDUKCJI
+        fprintf('📊 Using all %d original features\n', size(allFeatures, 2));
+        reducedFeatures = allFeatures;
+        
+        % Minimal reductionInfo for consistency
+        reductionInfo = struct();
+        reductionInfo.method = 'none';
+        reductionInfo.originalDims = size(allFeatures, 2);
+        reductionInfo.reducedDims = size(allFeatures, 2);
+end
 end
