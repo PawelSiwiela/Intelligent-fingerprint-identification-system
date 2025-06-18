@@ -82,24 +82,20 @@ try
         offerDataSaving(preprocessedImages, [], normalizedFeatures, validImageIndices, labels, metadata, logFile);
     end
     
-    %% KROK 4: ML PIPELINE (dla obu ścieżek)
-    fprintf('\n🤖 Machine Learning Pipeline...\n');
+    %% KROK 4: ML PIPELINE (dla obu ścieżek) - ZAWSZE URUCHAMIANY
+    fprintf('\n🤖 Starting Machine Learning Pipeline...\n');
     
-    % Zapytaj użytkownika
-    if askUserForMLPipeline()
-        try
-            fprintf('\n🔗 Delegating to MLPipeline...\n');
-            
-            % DELEGUJ DO MLPipeline - TYLKO ML, BEZ PREPROCESSINGU
-            MLPipeline(normalizedFeatures, labels, metadata, preprocessedImages, validImageIndices);
-            
-            fprintf('✅ ML Pipeline completed successfully!\n');
-        catch ME
-            fprintf('⚠️  ML Pipeline failed: %s\n', ME.message);
-            logWarning(sprintf('ML Pipeline failed: %s', ME.message), logFile);
-        end
-    else
-        fprintf('⏭️  ML Pipeline skipped by user\n');
+    try
+        % ZAWSZE URUCHOM MLPipeline - pełna optymalizacja i trenowanie
+        MLPipeline(normalizedFeatures, labels, metadata, preprocessedImages, validImageIndices);
+        
+        fprintf('✅ ML Pipeline completed successfully!\n');
+    catch ME
+        fprintf('⚠️  ML Pipeline failed: %s\n', ME.message);
+        logWarning(sprintf('ML Pipeline failed: %s', ME.message), logFile);
+        
+        % Pokaż stack trace dla debugowania
+        fprintf('Stack trace: %s\n', getReport(ME, 'extended'));
     end
     
     %% KROK 5: Zakończenie
@@ -119,6 +115,8 @@ try
     closeLog(logFile, executionTime);
     
     fprintf('\nLog file saved to: %s\n', logFile);
+    fprintf('Check output/models/ for saved optimal parameters.\n');
+    fprintf('Check output/figures/ for visualizations.\n');
     fprintf('\n=================================================================\n');
     
 catch ME
@@ -337,27 +335,6 @@ dirs = {
 for i = 1:length(dirs)
     if ~exist(dirs{i}, 'dir')
         mkdir(dirs{i});
-    end
-end
-end
-
-function runML = askUserForMLPipeline()
-% ASKUSERFORMLPIPELINE Pyta użytkownika o ML Pipeline
-fprintf('Do you want to run ML Pipeline for model training and evaluation?\n');
-fprintf('  1. Yes - Run full ML Pipeline (training, optimization, evaluation)\n');
-fprintf('  2. No - Skip ML Pipeline\n');
-
-while true
-    choice = input('Select option (1 or 2): ');
-    
-    if choice == 1
-        runML = true;
-        break;
-    elseif choice == 2
-        runML = false;
-        break;
-    else
-        fprintf('Invalid choice. Please enter 1 or 2.\n');
     end
 end
 end

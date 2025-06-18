@@ -92,16 +92,16 @@ try
             mat2str(size(X_train_images)), mat2str(size(X_val_images)), mat2str(size(X_test_images)));
     end
     
-    %% KROK 4: Wybór strategii optymalizacji
+    %% KROK 4: Wybór strategii optymalizacji - UPROSZCZONA
     fprintf('\n🎯 HYPERPARAMETER OPTIMIZATION STRATEGY\n');
     fprintf('%s\n', repmat('=', 1, 60));
     
-    % Sprawdź czy są dostępne zapisane modele
+    % Sprawdź czy są dostępne zapisane PARAMETRY
     savedModelsDir = 'output/models';
-    availableModels = checkAvailableOptimalModels(savedModelsDir, models);
+    availableParameters = checkAvailableOptimalParameters(savedModelsDir, models);
     
-    if ~isempty(availableModels)
-        fprintf('Found optimal parameters for: %s\n', strjoin(availableModels, ', '));
+    if ~isempty(availableParameters)
+        fprintf('Found optimal parameters for: %s\n', strjoin(availableParameters, ', '));
         fprintf('\nChoose optimization strategy:\n');
         fprintf('  1. Use saved optimal parameters (FAST - seconds)\n');
         fprintf('  2. Optimize hyperparameters with Random Search (SLOW - minutes)\n');
@@ -142,15 +142,15 @@ try
         optimalParams = [];
         
         if strategy == 1
-            % STRATEGIA 1: Spróbuj załadować optymalne parametry dla WSZYSTKICH modeli
+            % STRATEGIA 1: Załaduj optymalne parametry
             [optimalParams, loadSuccess] = loadOptimalParameters(savedModelsDir, modelType);
             
             if loadSuccess
                 fprintf('✅ Loaded optimal parameters for %s\n', upper(modelType));
                 shouldOptimize = false;
                 
-                % Oszacuj "bestScore" na podstawie zapisanych wyników
-                estimatedScore = estimateScoreFromOptimalParams(optimalParams);
+                % USUNIĘTE: Niepotrzebne oszacowanie - użyj domyślną
+                estimatedScore = 0.90; % Domyślne oszacowanie dla załadowanych parametrów
                 
                 optimizationResults.(modelType) = struct();
                 optimizationResults.(modelType).bestHyperparams = optimalParams;
@@ -158,22 +158,13 @@ try
                 optimizationResults.(modelType).allResults = [];
                 optimizationResults.(modelType).source = 'loaded_optimal';
                 
-                fprintf('🎯 Using optimal %s parameters (estimated score: %.2f%%)\n', ...
+                fprintf('🎯 Using optimal %s parameters (estimated score: %.1f%%)\n', ...
                     upper(modelType), estimatedScore * 100);
             else
                 fprintf('⚠️  Failed to load optimal parameters for %s.\n', upper(modelType));
-                fprintf('    No optimal parameters found - cannot use strategy 1!\n');
-                fprintf('    Please run optimization first or choose strategy 2.\n');
-                
-                % W strategii 1, jeśli nie można załadować parametrów, pomiń model
-                optimizationResults.(modelType) = struct();
-                optimizationResults.(modelType).bestScore = 0;
-                optimizationResults.(modelType).source = 'failed_load';
-                continue;
+                fprintf('    Switching to optimization...\n');
+                strategy = 2; % Auto-fallback na optymalizację
             end
-        else
-            % STRATEGIA 2: Zawsze optymalizuj od zera
-            shouldOptimize = true;
         end
         
         if shouldOptimize
@@ -268,28 +259,25 @@ try
                 upper(modelType), trainResults.testAccuracy * 100, ...
                 strcmp(modelType, 'cnn'), 'train+val images', 'train+val features');
             
-            % Zapisz model jeśli accuracy > 95%
-            if trainResults.testAccuracy > 0.95
-                saveHighPerformanceModel(finalModel, trainResults, modelType, bestHyperparams);
-                fprintf('🏆 High-performance %s model saved!\n', upper(modelType));
-            end
-            
-            % POPRAWIONE: Zapisz optymalne parametry przy >95% accuracy I TYLKO jeśli były optymalizowane
-            shouldSaveOptimal = (trainResults.testAccuracy >= 0.95) && ... % >95% accuracy
-                isfield(optimizationResults, modelType) && ...  % DODANE: sprawdź czy pole istnieje
-                isfield(optimizationResults.(modelType), 'source') && ... % DODANE: sprawdź czy source istnieje
+            % TYLKO PARAMETRY: Zapisz optymalne parametry przy >95% TEST accuracy
+            shouldSaveOptimal = (trainResults.testAccuracy >= 0.95) && ... % TYLKO test accuracy!
+                isfield(optimizationResults, modelType) && ...
+                isfield(optimizationResults.(modelType), 'source') && ...
                 strcmp(optimizationResults.(modelType).source, 'optimized'); % Nie z załadowanych
             
             if shouldSaveOptimal
                 saveOptimalParameters(modelType, bestHyperparams, trainResults, optimizationResults.(modelType));
-                fprintf('🎯 EXCELLENT %.1f%% accuracy! Optimal parameters saved for future use!\n', trainResults.testAccuracy * 100);
+                fprintf('🎯 EXCELLENT %.1f%% TEST accuracy! Optimal parameters saved for future use!\n', ...
+                    trainResults.testAccuracy * 100);
             elseif trainResults.testAccuracy >= 0.95 && ...
                     isfield(optimizationResults, modelType) && ...
                     isfield(optimizationResults.(modelType), 'source') && ...
                     strcmp(optimizationResults.(modelType).source, 'loaded_optimal')
-                fprintf('🎯 EXCELLENT %.1f%% accuracy achieved with loaded parameters (not re-saving)\n', trainResults.testAccuracy * 100);
+                fprintf('🎯 EXCELLENT %.1f%% TEST accuracy achieved with loaded parameters (not re-saving)\n', ...
+                    trainResults.testAccuracy * 100);
             elseif trainResults.testAccuracy < 0.95
-                fprintf('📊 Test accuracy %.1f%% < 95%% - optimal parameters not saved\n', trainResults.testAccuracy * 100);
+                fprintf('📊 Test accuracy %.1f%% < 95%% - optimal parameters not saved\n', ...
+                    trainResults.testAccuracy * 100);
             end
             
         catch ME
@@ -477,37 +465,12 @@ fprintf('📊 Final CNN trained on %d samples, tested on %d samples\n', ...
     size(X_combined, 4), size(X_test, 4));
 end
 
-function saveHighPerformanceModel(model, results, modelType, hyperparams)
-% SAVEHIGHPERFORMANCEMODEL Zapisuje modele z accuracy > 95%
-
-outputDir = 'output/models';
-if ~exist(outputDir, 'dir')
-    mkdir(outputDir);
-end
-
-timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
-filename = sprintf('%s_acc%.1f_%s.mat', modelType, results.testAccuracy*100, timestamp);
-filepath = fullfile(outputDir, filename);
-
-% Struktura do zapisu
-modelData = struct();
-modelData.model = model;
-modelData.results = results;
-modelData.hyperparams = hyperparams;
-modelData.modelType = modelType;
-modelData.saveTimestamp = timestamp;
-
-save(filepath, 'modelData');
-
-fprintf('🔥 High-performance model saved: %s\n', filename);
-end
-
 function saveOptimalParameters(modelType, hyperparams, results, optimizationResults)
-% SAVEOPTIMALPARAMETERS Zapisuje optymalne parametry przy >95% accuracy
+% SAVEOPTIMALPARAMETERS Zapisuje optymalne parametry TYLKO przy >95% TEST accuracy
 
-% WALIDACJA: Upewnij się że to rzeczywiście >95% accuracy
+% WALIDACJA: Upewnij się że to rzeczywiście >95% TEST accuracy
 if results.testAccuracy < 0.95
-    fprintf('⚠️  Cannot save optimal parameters - test accuracy %.1f%% < 95%%\n', results.testAccuracy * 100);
+    fprintf('⚠️  Cannot save optimal parameters - TEST accuracy %.1f%% < 95%%\n', results.testAccuracy * 100);
     return;
 end
 
@@ -517,53 +480,53 @@ if ~exist(outputDir, 'dir')
 end
 
 timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
+modelTypeLower = lower(modelType);
 
-% POPRAWKA: Użyj MAŁYCH LITER dla nazwy modelu (jak chcesz)
-modelTypeLower = lower(modelType); % cnn zamiast CNN
-
-% POPRAWIONA NAZWA: Dokładnie jak chcesz
+% NAZWY PLIKÓW OPARTE NA TEST ACCURACY
 if results.testAccuracy >= 1.0
-    qualityTag = 'perfect_100pct';
-    qualityNote = 'Perfect 100% test accuracy achieved through optimization';
-    filename = sprintf('%s_OPTIMAL_100PCT_%s.mat', modelTypeLower, timestamp);
+    qualityTag = 'perfect_100pct_TEST';
+    qualityNote = 'Perfect 100% TEST accuracy achieved through optimization';
+    filename = sprintf('%s_OPTIMAL_100PCT_TEST_%s.mat', modelTypeLower, timestamp);
 elseif results.testAccuracy >= 0.98
-    qualityTag = 'excellent_98pct';
-    qualityNote = 'Excellent 98%+ test accuracy achieved through optimization';
-    filename = sprintf('%s_OPTIMAL_98PCT_%s.mat', modelTypeLower, timestamp);
+    qualityTag = 'excellent_98pct_TEST';
+    qualityNote = 'Excellent 98%+ TEST accuracy achieved through optimization';
+    filename = sprintf('%s_OPTIMAL_98PCT_TEST_%s.mat', modelTypeLower, timestamp);
 else
-    qualityTag = 'very_good_95pct';
-    qualityNote = 'Very good 95%+ test accuracy achieved through optimization';
-    filename = sprintf('%s_OPTIMAL_95PCT_%s.mat', modelTypeLower, timestamp);
+    qualityTag = 'very_good_95pct_TEST';
+    qualityNote = 'Very good 95%+ TEST accuracy achieved through optimization';
+    filename = sprintf('%s_OPTIMAL_95PCT_TEST_%s.mat', modelTypeLower, timestamp);
 end
 
 filepath = fullfile(outputDir, filename);
 
-% Struktura z optymalnymi parametrami
+% Struktura z optymalnymi parametrami - PODKREŚL TEST ACCURACY
 optimalData = struct();
 optimalData.hyperparams = hyperparams;
 optimalData.modelType = modelType;
-optimalData.testAccuracy = results.testAccuracy;
-optimalData.validationAccuracy = optimizationResults.bestScore;
+optimalData.testAccuracy = results.testAccuracy;        % GŁÓWNY WSKAŹNIK
+optimalData.validationAccuracy = optimizationResults.bestScore; % Pomocniczy
 optimalData.trainTime = results.trainTime;
 optimalData.saveTimestamp = timestamp;
 optimalData.source = qualityTag;
 optimalData.isHighQuality = true;
 
-% Dodatkowe metadane dla wysokiej jakości modeli
-optimalData.qualityScore = results.testAccuracy;
-optimalData.validation_accuracy = optimizationResults.bestScore;
+% DODANE: Wyraźne oznaczenie że to TEST accuracy
+optimalData.qualityMetric = 'TEST_ACCURACY';           % NOWE
+optimalData.testAccuracyScore = results.testAccuracy;  % NOWE - wyraźne
+optimalData.validationAccuracyScore = optimizationResults.bestScore; % NOWE - wyraźne
 optimalData.note = qualityNote;
 
 save(filepath, 'optimalData');
 
 fprintf('🎯 HIGH-QUALITY optimal parameters saved: %s\n', filename);
-fprintf('   These parameters achieved %.1f%% test accuracy!\n', results.testAccuracy * 100);
+fprintf('   These parameters achieved %.1f%% TEST accuracy (validation: %.1f%%)!\n', ...
+    results.testAccuracy * 100, optimizationResults.bestScore * 100);
 end
 
 %% HELPER FUNCTIONS DLA OPTYMALNYCH PARAMETRÓW
 
-function availableModels = checkAvailableOptimalModels(modelsDir, requestedModels)
-% CHECKAVAILABLEOPTIMALMODELS Sprawdza które modele mają zapisane optymalne parametry
+function availableModels = checkAvailableOptimalParameters(modelsDir, requestedModels)
+% CHECKAVAILABLEOPTIMALPARAMETERS Sprawdza które modele mają zapisane optymalne PARAMETRY
 
 availableModels = {};
 
@@ -574,22 +537,37 @@ end
 for i = 1:length(requestedModels)
     modelType = requestedModels{i};
     
-    % Szukaj plików z optymalnych parametrów dla tego modelu
-    pattern = sprintf('%s_optimal_*.mat', modelType);
+    % Szukaj TYLKO plików z optymalnych PARAMETRÓW
+    pattern = sprintf('%s_OPTIMAL_*.mat', modelType);
     files = dir(fullfile(modelsDir, pattern));
     
-    % Również szukaj plików z wysoką accuracy
-    pattern2 = sprintf('%s_acc*.mat', modelType);
-    files2 = dir(fullfile(modelsDir, pattern2));
-    
-    if ~isempty(files) || ~isempty(files2)
+    if ~isempty(files)
         availableModels{end+1} = modelType;
+        
+        % POKAZUJ najnowszy plik dla informacji
+        [~, newestIdx] = max([files.datenum]);
+        newestFile = files(newestIdx);
+        
+        try
+            filePath = fullfile(modelsDir, newestFile.name);
+            loadedData = load(filePath);
+            
+            if isfield(loadedData, 'optimalData')
+                accuracy = loadedData.optimalData.testAccuracy * 100;
+                fprintf('  %s: %.1f%% TEST accuracy (%s)\n', ...
+                    upper(modelType), accuracy, newestFile.name);
+            else
+                fprintf('  %s: Available (%s)\n', upper(modelType), newestFile.name);
+            end
+        catch
+            fprintf('  %s: Available (%s)\n', upper(modelType), newestFile.name);
+        end
     end
 end
 end
 
 function [optimalParams, success] = loadOptimalParameters(modelsDir, modelType)
-% LOADOPTIMALPARAMETERS Ładuje optymalne parametry dla modelu - PREFERUJE NAJWYŻSZĄ ACCURACY
+% LOADOPTIMALPARAMETERS Ładuje TYLKO optymalne parametry - UPROSZCZONA WERSJA
 
 optimalParams = [];
 success = false;
@@ -598,138 +576,51 @@ if ~exist(modelsDir, 'dir')
     return;
 end
 
-% STRATEGIA 1: Priorytet dla plików z 100% accuracy
-pattern_100 = sprintf('%s_OPTIMAL_100PCT_*.mat', modelType);
-files_100 = dir(fullfile(modelsDir, pattern_100));
-
-% STRATEGIA 2: Pliki z 98%+ accuracy
-pattern_98 = sprintf('%s_OPTIMAL_98PCT_*.mat', modelType);
-files_98 = dir(fullfile(modelsDir, pattern_98));
-
-% STRATEGIA 3: Pliki z 95%+ accuracy
-pattern_95 = sprintf('%s_OPTIMAL_95PCT_*.mat', modelType);
-files_95 = dir(fullfile(modelsDir, pattern_95));
-
-% STRATEGIA 4: Szukaj starych plików z "optimal" w nazwie
-pattern_optimal = sprintf('%s_optimal_*.mat', modelType);
-files_optimal = dir(fullfile(modelsDir, pattern_optimal));
-
-% STRATEGIA 5: Szukaj najlepszego modelu z wysoką accuracy
-pattern_good = sprintf('%s_acc*.mat', modelType);
-files_good = dir(fullfile(modelsDir, pattern_good));
-
-% PRIORYTETYZACJA: 100% -> 98% -> 95% -> optimal -> good
-if ~isempty(files_100)
-    files = files_100;
-    fprintf('🎯 Found PERFECT 100%% accuracy parameters!\n');
-elseif ~isempty(files_98)
-    files = files_98;
-    fprintf('🌟 Found EXCELLENT 98%%+ accuracy parameters!\n');
-elseif ~isempty(files_95)
-    files = files_95;
-    fprintf('⭐ Found VERY GOOD 95%%+ accuracy parameters!\n');
-elseif ~isempty(files_optimal)
-    files = files_optimal;
-    fprintf('📊 Found optimal parameters (unknown accuracy)\n');
-elseif ~isempty(files_good)
-    files = files_good;
-    fprintf('📈 Found good performance parameters\n');
-    
-    % Sortuj według accuracy w nazwie
-    accuracies = [];
-    for i = 1:length(files)
-        filename = files(i).name;
-        tokens = regexp(filename, sprintf('%s_acc([0-9.]+)_', modelType), 'tokens');
-        if ~isempty(tokens)
-            accuracies(i) = str2double(tokens{1}{1});
-        else
-            accuracies(i) = 0;
-        end
-    end
-    
-    % Wybierz najlepszy
-    [~, bestIdx] = max(accuracies);
-    files = files(bestIdx);
-else
-    return;
-end
+% TYLKO JEDNA STRATEGIA: Najnowsze pliki z OPTIMAL
+pattern = sprintf('%s_OPTIMAL_*.mat', modelType);
+files = dir(fullfile(modelsDir, pattern));
 
 if isempty(files)
     return;
 end
 
 % Sortuj chronologicznie - najnowsze pierwsze
-if length(files) > 1
-    dateTimes = [files.datenum];
-    [~, sortIdx] = sort(dateTimes, 'descend');
-    selectedFile = files(sortIdx(1));
-else
-    selectedFile = files(1);
-end
+[~, sortIdx] = sort([files.datenum], 'descend');
+selectedFile = files(sortIdx(1));
 
 try
     filePath = fullfile(modelsDir, selectedFile.name);
     loadedData = load(filePath);
     
-    % Sprawdź strukturę pliku
     if isfield(loadedData, 'optimalData')
         optimalData = loadedData.optimalData;
         optimalParams = optimalData.hyperparams;
         success = true;
         
-        % KOMUNIKATY dla różnych poziomów accuracy
+        % KOMUNIKAT
         if isfield(optimalData, 'testAccuracy')
             accuracy = optimalData.testAccuracy * 100;
+            
             if accuracy >= 100
-                fprintf('📂 Loaded PERFECT parameters: %s (%.1f%% test accuracy!)\n', selectedFile.name, accuracy);
+                fprintf('📂 Loaded PERFECT parameters: %.1f%% TEST accuracy (%s)\n', accuracy, selectedFile.name);
             elseif accuracy >= 98
-                fprintf('📂 Loaded EXCELLENT parameters: %s (%.1f%% test accuracy!)\n', selectedFile.name, accuracy);
+                fprintf('📂 Loaded EXCELLENT parameters: %.1f%% TEST accuracy (%s)\n', accuracy, selectedFile.name);
             elseif accuracy >= 95
-                fprintf('📂 Loaded VERY GOOD parameters: %s (%.1f%% test accuracy!)\n', selectedFile.name, accuracy);
+                fprintf('📂 Loaded VERY GOOD parameters: %.1f%% TEST accuracy (%s)\n', accuracy, selectedFile.name);
             else
-                fprintf('📂 Loaded parameters: %s (%.1f%% test accuracy)\n', selectedFile.name, accuracy);
+                fprintf('📂 Loaded parameters: %.1f%% TEST accuracy (%s)\n', accuracy, selectedFile.name);
             end
         else
             fprintf('📂 Loaded optimal parameters: %s\n', selectedFile.name);
         end
         
-    elseif isfield(loadedData, 'modelData')
-        modelData = loadedData.modelData;
-        optimalParams = modelData.hyperparams;
-        success = true;
-        
-        fprintf('📂 Loaded model parameters: %s (%.1f%% test accuracy)\n', ...
-            selectedFile.name, modelData.results.testAccuracy * 100);
-        
-    elseif isfield(loadedData, 'bestHyperparams')
-        optimalParams = loadedData.bestHyperparams;
-        success = true;
-        fprintf('📂 Loaded legacy parameters: %s\n', selectedFile.name);
-        
     else
-        fprintf('⚠️  Unknown file format: %s\n', selectedFile.name);
+        fprintf('⚠️  File does not contain optimal parameters: %s\n', selectedFile.name);
     end
     
 catch ME
     fprintf('⚠️  Error loading %s: %s\n', selectedFile.name, ME.message);
 end
-end
-
-function estimatedScore = estimateScoreFromOptimalParams(optimalParams)
-% ESTIMATESCOREFROMOPTIMALPARAMS Oszacuj score na podstawie parametrów
-
-% Domyślnie załóż że optymalne parametry dają dobrą accuracy
-estimatedScore = 0.90; % 90% base estimate
-
-% Jeśli są to parametry z wysokiej jakości modelu, podnieś estimate
-if isfield(optimalParams, 'qualityScore')
-    estimatedScore = optimalParams.qualityScore;
-elseif isfield(optimalParams, 'validation_accuracy')
-    estimatedScore = optimalParams.validation_accuracy;
-end
-
-% Clamp do sensownego zakresu
-estimatedScore = max(0.5, min(0.98, estimatedScore));
 end
 
 function [reducedFeatures, reductionInfo] = askForDimensionalityReduction(allFeatures, validLabels, metadata)
