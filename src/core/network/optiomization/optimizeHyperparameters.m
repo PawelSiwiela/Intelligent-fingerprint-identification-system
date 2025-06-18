@@ -1,10 +1,16 @@
-function [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(trainData, valData, modelType, numTrials, imagesData)
+function [bestHyperparams, bestScore, allResults] = optimizeHyperparameters(trainData, valData, modelType, numTrials, imagesData, logFile)
 % OPTIMIZEHYPERPARAMETERS Random Search - PRZEPISANY TYLKO DLA PATTERNNET
 
 if nargin < 4, numTrials = 30; end
 if nargin < 5, imagesData = []; end
+if nargin < 6, logFile = []; end
 
 fprintf('\n🔍 Random Search for %s (%d trials)...\n', upper(modelType), numTrials);
+
+% LOGOWANIE
+if ~isempty(logFile)
+    logInfo(sprintf('Starting Random Search for %s (%d trials)', upper(modelType), numTrials), logFile);
+end
 
 bestScore = 0;
 bestHyperparams = [];
@@ -41,9 +47,20 @@ for trial = 1:numTrials
         bestHyperparams = hyperparams;
         fprintf('🎯 NEW BEST! Score: %.3f (%.1fs)\n', score, trainTime);
         
-        % Early stopping przy 90%
+        % LOGOWANIE NAJLEPSZEGO WYNIKU
+        if ~isempty(logFile)
+            logInfo(sprintf('NEW BEST %s score: %.3f (trial %d)', upper(modelType), score, trial), logFile);
+        end
+        
+        % Early stopping przy 95% - ZMIANA Z 90% na 95%
         if score >= 0.90
             fprintf('🛑 EARLY STOPPING! Achieved %.1f%% accuracy\n', score * 100);
+            
+            % LOGOWANIE EARLY STOPPING
+            if ~isempty(logFile)
+                logInfo(sprintf('EARLY STOPPING %s optimization at %.1f%% accuracy (trial %d)', upper(modelType), score * 100, trial), logFile);
+            end
+            
             break;
         end
     else
@@ -56,6 +73,11 @@ end
 allResults = allResults(sortIdx);
 
 fprintf('\n📊 Best validation accuracy: %.3f%%\n', bestScore * 100);
+
+% LOGOWANIE KOŃCOWEGO WYNIKU
+if ~isempty(logFile)
+    logInfo(sprintf('%s optimization completed: Best score %.3f%% after %d trials', upper(modelType), bestScore * 100, length(allResults)), logFile);
+end
 end
 
 %% NOWY PROSTY GENERATOR DLA PATTERNNET
@@ -129,12 +151,6 @@ try
     % DEBUG: Sprawdź dane
     uniqueTrainLabels = unique(trainData.labels);
     fprintf('Train classes: %s ', mat2str(uniqueTrainLabels));
-    
-    % 3. USUŃ BŁĘDNE PARAMETRY - net.divideFcn już ustawiony w createPatternNet!
-    % NIE ROBIMY TEGO - TO POWODOWAŁO BŁĘDY:
-    % net.divideParam.trainRatio = 1.0;  <-- USUŃ!
-    % net.divideParam.valRatio = 0.0;    <-- USUŃ!
-    % net.divideParam.testRatio = 0.0;   <-- USUŃ!
     
     % 4. Trenuj
     warning('off', 'all');

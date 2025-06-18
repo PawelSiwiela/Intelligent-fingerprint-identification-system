@@ -53,6 +53,7 @@ output/
 !output/logs/.gitkeep
 !output/models/.gitkeep
 !output/figures/.gitkeep
+!output/anonymized_data/.gitkeep
 !/data/.gitkeep
 
 # Ignoruj pliki PDF i DOCX

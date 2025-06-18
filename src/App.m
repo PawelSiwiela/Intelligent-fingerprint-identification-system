@@ -82,12 +82,12 @@ try
         offerDataSaving(preprocessedImages, [], normalizedFeatures, validImageIndices, labels, metadata, logFile);
     end
     
-    %% KROK 4: ML PIPELINE (dla obu ścieżek) - ZAWSZE URUCHAMIANY
+    %% KROK 4: ML PIPELINE - PRZEKAŻ logFile
     fprintf('\n🤖 Starting Machine Learning Pipeline...\n');
     
     try
-        % ZAWSZE URUCHOM MLPipeline - pełna optymalizacja i trenowanie
-        MLPipeline(normalizedFeatures, labels, metadata, preprocessedImages, validImageIndices);
+        % PRZEKAŻ logFile do MLPipeline
+        MLPipeline(normalizedFeatures, labels, metadata, preprocessedImages, validImageIndices, logFile);
         
         fprintf('✅ ML Pipeline completed successfully!\n');
     catch ME
@@ -96,6 +96,7 @@ try
         
         % Pokaż stack trace dla debugowania
         fprintf('Stack trace: %s\n', getReport(ME, 'extended'));
+        logError(sprintf('ML Pipeline stack trace: %s', getReport(ME, 'extended')), logFile);
     end
     
     %% KROK 5: Zakończenie

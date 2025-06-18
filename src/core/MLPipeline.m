@@ -1,11 +1,23 @@
-function MLPipeline(allFeatures, validLabels, metadata, preprocessedImages, validImageIndices)
-% MLPIPELINE NAPRAWIONY - JEDEN PODZIAŁ DANYCH
+function MLPipeline(allFeatures, validLabels, metadata, preprocessedImages, validImageIndices, logFile)
+% MLPIPELINE NAPRAWIONY - DODAJ logFile parameter
+
+% NOWY PARAMETR logFile - z domyślną wartością
+if nargin < 6
+    logFile = [];
+end
 
 fprintf('\n');
 fprintf('=================================================================\n');
 fprintf('                    ML PIPELINE - FINGERPRINT CLASSIFICATION     \n');
 fprintf('                         (PatternNet + CNN)                      \n');
 fprintf('=================================================================\n');
+
+% LOGOWANIE STARTU
+if ~isempty(logFile)
+    logInfo('=============================================================', logFile);
+    logInfo('           ML PIPELINE - FINGERPRINT CLASSIFICATION          ', logFile);
+    logInfo('=============================================================', logFile);
+end
 
 % Sprawdź argumenty
 if nargin < 3
@@ -18,9 +30,15 @@ hasCNNData = (nargin >= 5) && ~isempty(preprocessedImages) && ~isempty(validImag
 if hasCNNData
     fprintf('📊 Running with PatternNet (features) + CNN (images)\n');
     models = {'patternnet', 'cnn'};
+    if ~isempty(logFile)
+        logInfo('Running with PatternNet (features) + CNN (images)', logFile);
+    end
 else
     fprintf('📊 Running with PatternNet only (no image data for CNN)\n');
     models = {'patternnet'};
+    if ~isempty(logFile)
+        logInfo('Running with PatternNet only (no image data for CNN)', logFile);
+    end
 end
 
 try
@@ -28,18 +46,32 @@ try
     fprintf('\n📂 Received Data Summary:\n');
     fprintf('✅ Features: %d samples with %d features\n', size(allFeatures, 1), size(allFeatures, 2));
     
+    % LOGOWANIE DANYCH
+    if ~isempty(logFile)
+        logInfo(sprintf('Features: %d samples with %d features', size(allFeatures, 1), size(allFeatures, 2)), logFile);
+    end
+    
     if hasCNNData
         fprintf('✅ Images: %d preprocessed images for CNN\n', length(preprocessedImages));
         fprintf('✅ Valid image indices: %d\n', length(validImageIndices));
+        if ~isempty(logFile)
+            logInfo(sprintf('Images: %d preprocessed images for CNN', length(preprocessedImages)), logFile);
+        end
     end
     
     % Sprawdź rozkład klas
     uniqueLabels = unique(validLabels);
+    if ~isempty(logFile)
+        logInfo('CLASS DISTRIBUTION:', logFile);
+    end
     for i = 1:length(uniqueLabels)
         label = uniqueLabels(i);
         count = sum(validLabels == label);
         fingerName = metadata.fingerNames{label};
         fprintf('   %s (label %d): %d samples\n', fingerName, label, count);
+        if ~isempty(logFile)
+            logInfo(sprintf('%s (label %d): %d samples', fingerName, label, count), logFile);
+        end
     end
     
     %% KROK 2: Redukcja wymiarowości (PRZED podziałem!)
@@ -54,6 +86,10 @@ try
     % SPLIT COUNTS dla optymalizacji
     SPLIT_COUNTS = [9, 2, 3]; % Train: 9, Val: 2, Test: 3 per klasa
     fprintf('🔧 Using optimized split: [%d, %d, %d] per class\n', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3));
+    
+    if ~isempty(logFile)
+        logInfo(sprintf('Dataset split strategy: [%d, %d, %d] per class', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3)), logFile);
+    end
     
     % JEDEN PODZIAŁ dla cech (PatternNet)
     [trainData, valData, testData] = splitDataset(allFeatures, validLabels, metadata, SPLIT_COUNTS);
@@ -127,7 +163,7 @@ try
             fprintf('Random Search hyperparameter optimization\n');
     end
     
-    %% KROK 6: Optymalizacja hiperparametrów - z wyborem strategii
+    %% KROK 5: Optymalizacja hiperparametrów
     optimizationResults = struct();
     
     for modelIdx = 1:length(models)
@@ -136,6 +172,10 @@ try
         fprintf('\n%s\n', repmat('=', 1, 60));
         fprintf('🚀 PROCESSING %s\n', upper(modelType));
         fprintf('%s\n', repmat('=', 1, 60));
+        
+        if ~isempty(logFile)
+            logInfo(sprintf('PROCESSING %s', upper(modelType)), logFile);
+        end
         
         % Sprawdź strategię dla tego modelu
         shouldOptimize = true;
@@ -179,27 +219,34 @@ try
             
             if strcmp(modelType, 'cnn') && hasCNNData
                 [bestHyperparams, bestScore, results] = optimizeHyperparameters(...
-                    trainData, valData, modelType, numTrials, imagesData);
+                    trainData, valData, modelType, numTrials, imagesData, logFile); % DODAJ logFile
             else
                 [bestHyperparams, bestScore, results] = optimizeHyperparameters(...
-                    trainData, valData, modelType, numTrials);
+                    trainData, valData, modelType, numTrials, [], logFile); % DODAJ logFile
             end
             
             optimizationResults.(modelType) = struct(...
                 'bestHyperparams', bestHyperparams, ...
                 'bestScore', bestScore, ...
                 'allResults', results, ...
-                'source', 'optimized'); % DODANE: source field!
+                'source', 'optimized');
             
             fprintf('\n🎯 Best %s validation accuracy: %.2f%%\n', upper(modelType), bestScore * 100);
+            
+            if ~isempty(logFile)
+                logInfo(sprintf('Best %s validation accuracy: %.2f%%', upper(modelType), bestScore * 100), logFile);
+            end
         end
-        
     end
     
-    %% KROK 5: Trenuj finalne modele NA TRAIN+VALIDATION
+    %% KROK 6: Trenuj finalne modele NA TRAIN+VALIDATION
     fprintf('\n%s\n', repmat('=', 1, 60));
     fprintf('🏁 TRAINING FINAL MODELS (Train + Validation Data)\n');
     fprintf('%s\n', repmat('=', 1, 60));
+    
+    if ~isempty(logFile)
+        logInfo('TRAINING FINAL MODELS (Train + Validation Data)', logFile);
+    end
     
     finalModels = struct();
     
@@ -209,12 +256,18 @@ try
         % SPRAWDŹ czy optymalizacja się udała
         if ~isfield(optimizationResults, modelType) || optimizationResults.(modelType).bestScore == 0
             fprintf('\n⚠️  Skipping %s - optimization failed\n', upper(modelType));
+            if ~isempty(logFile)
+                logWarning(sprintf('Skipping %s - optimization failed', upper(modelType)), logFile);
+            end
             continue;
         end
         
         bestHyperparams = optimizationResults.(modelType).bestHyperparams;
         
         fprintf('\n🔥 Training final %s model...\n', upper(modelType));
+        if ~isempty(logFile)
+            logInfo(sprintf('Training final %s model', upper(modelType)), logFile);
+        end
         
         try
             if strcmp(modelType, 'cnn') && hasCNNData
@@ -269,6 +322,9 @@ try
                 saveOptimalParameters(modelType, bestHyperparams, trainResults, optimizationResults.(modelType));
                 fprintf('🎯 EXCELLENT %.1f%% TEST accuracy! Optimal parameters saved for future use!\n', ...
                     trainResults.testAccuracy * 100);
+                if ~isempty(logFile)
+                    logInfo(sprintf('EXCELLENT %.1f%% TEST accuracy! Optimal parameters saved', trainResults.testAccuracy * 100), logFile);
+                end
             elseif trainResults.testAccuracy >= 0.95 && ...
                     isfield(optimizationResults, modelType) && ...
                     isfield(optimizationResults.(modelType), 'source') && ...
@@ -282,6 +338,9 @@ try
             
         catch ME
             fprintf('⚠️  Training %s model failed: %s\n', upper(modelType), ME.message);
+            if ~isempty(logFile)
+                logError(sprintf('Training %s model failed: %s', upper(modelType), ME.message), logFile);
+            end
         end
     end
     
@@ -377,9 +436,15 @@ try
     fprintf('Check output/models/ for saved models.\n');
     fprintf('Check output/figures/ for visualizations.\n');
     
+    if ~isempty(logFile)
+        logInfo('ML Pipeline completed successfully!', logFile);
+    end
+    
 catch ME
     fprintf('\n❌ ML Pipeline error: %s\n', ME.message);
-    fprintf('Stack trace: %s\n', getReport(ME, 'extended'));
+    if ~isempty(logFile)
+        logError(sprintf('ML Pipeline error: %s', ME.message), logFile);
+    end
     rethrow(ME);
 end
 end
