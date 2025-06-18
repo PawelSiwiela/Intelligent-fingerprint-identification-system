@@ -98,7 +98,7 @@ end
 %% REGULARYZACJA
 
 try
-    net.performParam.regularization = 0.3; % ZWIĘKSZONE z 0.01 na 0.1!
+    net.performParam.regularization = 0.6; % ZWIĘKSZONE z 0.01 na 0.1!
 catch
     % Ignore if not supported
 end

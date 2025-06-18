@@ -61,28 +61,28 @@ end
 %% NOWY PROSTY GENERATOR DLA PATTERNNET
 
 function hyperparams = generatePatternNetHyperparams(trial)
-% GENERATEPATTERNETHYPERPARAMS - ZOPTYMALIZOWANY DLA 86.7% SUCCESS
+% ULTRA KONSERWATYWNE PARAMETRY dla 95%+
 
-% NAJLEPSZE ARCHITEKTURY (w kolejności skuteczności)
-architectures = {[3], [4], [5], [6], [7]};
+% TYLKO NAJLEPSZE ARCHITEKTURY
+architectures = {[6], [7], [8]}; % TYLKO te które działają dobrze
 
-% TYLKO TRAINSCG!
-trainFunctions = {'trainscg'}; % 100% najlepszych wyników
+% TYLKO trainscg
+trainFunctions = {'trainscg'};
 
 % MSE tylko
 performFunctions = {'mse'};
 
-% OPTYMALNE EPOCHS - 20-25 sweet spot
-epochsOptions = [20, 25]; % TYLKO sprawdzone wartości
+% KRÓTSZA LICZBA EPOK
+epochsOptions = [15, 20, 25]; % ZMNIEJSZ maksimum
 
-% ZOPTYMALIZOWANE LR - wszystkie skuteczne wartości
-lrOptions = [5e-4, 1e-3, 2e-3, 5e-3, 1e-2];
+% BARDZO KONSERWATYWNE LR
+lrOptions = [5e-4, 1e-3]; % TYLKO sprawdzone wartości
 
-% MAGICZNY GOAL!
-goalOptions = [1e-3, 2e-3]; % TYLKO wartość która daje 86.7
+% WYSOKIE GOALS
+goalOptions = [2e-3, 3e-3]; % WYŻSZE progi zatrzymania
 
-% MAX_FAIL - różny w najlepszych wynikach
-maxFailOptions = [1, 2, 3];
+% BARDZO WCZESNY STOP
+maxFailOptions = [1, 2]; % TYLKO 1-2 fails
 
 % Użyj trial number do cyklicznego wyboru z list
 hyperparams = struct();
@@ -98,10 +98,10 @@ hyperparams.lr = lrOptions(randi(length(lrOptions)));
 hyperparams.goal = goalOptions(randi(length(goalOptions)));
 hyperparams.max_fail = maxFailOptions(randi(length(maxFailOptions)));
 
-% LM parametry (nie używane przez trainscg, ale dla kompletności)
-hyperparams.mu = 0.005;
-hyperparams.mu_dec = 0.3;
-hyperparams.mu_inc = 10;
+% LM parametry
+hyperparams.mu = 0.01; % Wyższe niż poprzednio
+hyperparams.mu_dec = 0.2; % Bardziej agresywne
+hyperparams.mu_inc = 15;
 
 fprintf('[Arch=%s, Train=%s, E=%d, LR=%.1e, Goal=%.1e, MaxFail=%d] ', ...
     mat2str(hyperparams.hiddenSizes), hyperparams.trainFcn, ...
