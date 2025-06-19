@@ -53,10 +53,14 @@ try
     % Systematyczne wczytanie obrazów z organizacji katalogowej
     
     fprintf('\n📥 STEP 1/7: Loading %s images from directory structure...\n', selectedFormat);
+    loadingStartTime = tic;
     dataPath = 'data';
     
     % Delegacja do modułu loadImages z obsługą hierarchii katalogów
     [imageData, labels, metadata] = loadImages(dataPath, config, logFile);
+    
+    loadingTime = toc(loadingStartTime);
+    fprintf('✅ Data loading completed in %.2f seconds\n', loadingTime);
     
     % Walidacja krytyczna - bez obrazów nie ma sensu kontynuować
     if isempty(imageData)
@@ -291,6 +295,7 @@ try
     % Skalowanie wszystkich cech do jednolitego zakresu [0,1]
     
     fprintf('\n🔧 STEP 5/7: Feature normalization...\n');
+    normalizationStartTime = tic;
     
     % Sprawdź czy cechy wymagają normalizacji
     minVal = min(allFeatures(:));
@@ -315,6 +320,9 @@ try
         fprintf('Features already in [0,1] range - normalization skipped\n');
         logInfo('Feature normalization skipped - values already normalized', logFile);
     end
+    
+    normalizationTime = toc(normalizationStartTime);
+    fprintf('✅ Normalization completed in %.2f seconds\n', normalizationTime);
     
     %% KROK 6: WIZUALIZACJE CECH MINUCJI
     % Generowanie wykresów analitycznych dla przestrzeni cech
@@ -353,6 +361,12 @@ try
     metadata.featureVectorSize = size(normalizedFeatures, 2);
     metadata.preprocessingTime = processingTime + minutiaeTime;
     metadata.processingVersion = 'v1.0-advanced';
+    metadata.timings = struct();
+    metadata.timings.dataLoading = loadingTime;
+    metadata.timings.imagePreprocessing = processingTime;
+    metadata.timings.minutiaeExtraction = minutiaeTime;
+    metadata.timings.normalization = normalizationTime;
+    metadata.timings.totalPreprocessing = loadingTime + processingTime + minutiaeTime + normalizationTime;
     
     fprintf('✅ PREPROCESSING PIPELINE COMPLETED SUCCESSFULLY!\n');
     fprintf('================================================\n');
@@ -360,6 +374,16 @@ try
     fprintf('⏱️  Total processing time: %.1f seconds\n', metadata.preprocessingTime);
     fprintf('📊 Success rate: %.1f%% (%d/%d images)\n', metadata.successRate, validMinutiaeCount, numImages);
     fprintf('🧬 Feature space: %d samples × %d features\n', validMinutiaeCount, size(normalizedFeatures, 2));
+    
+    % RAPORT CZASÓW
+    fprintf('\n⏱️  DETAILED TIMING REPORT:\n');
+    fprintf('================================\n');
+    fprintf('📥 Data Loading:        %.2f seconds\n', loadingTime);
+    fprintf('🔄 Image Preprocessing: %.2f seconds (%.1f sec/image)\n', processingTime, processingTime/numImages);
+    fprintf('🔍 Minutiae Extraction: %.2f seconds\n', minutiaeTime);
+    fprintf('🔧 Normalization:       %.2f seconds\n', normalizationTime);
+    fprintf('📊 Total Preprocessing: %.2f seconds (%.1f minutes)\n', ...
+        metadata.timings.totalPreprocessing, metadata.timings.totalPreprocessing/60);
     
     % KOŃCOWE LOGOWANIE
     logSuccess(sprintf('Preprocessing pipeline completed: %d samples processed, %d features per sample', ...

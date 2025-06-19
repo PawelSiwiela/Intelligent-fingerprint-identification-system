@@ -110,14 +110,18 @@ try
         end
     end
     
-    %% KROK 2: REDUKCJA WYMIAROWOŚCI (przed podziałem danych!)
+    %% KROK 2: REDUKCJA WYMIAROWOŚCI
     fprintf('\n🔬 DIMENSIONALITY REDUCTION FOR PATTERNNET\n');
-    fprintf('%s\n', repmat('=', 1, 60));
+    reductionStartTime = tic;
     
     [allFeatures, reductionInfo] = askForDimensionalityReduction(allFeatures, validLabels, metadata);
     
-    %% KROK 3: WSPÓLNY PODZIAŁ DANYCH (po redukcji wymiarowości)
+    reductionTime = toc(reductionStartTime);
+    fprintf('✅ Dimensionality reduction completed in %.2f seconds\n', reductionTime);
+    
+    %% KROK 3: PODZIAŁ DANYCH
     fprintf('\n📊 Splitting dataset...\n');
+    splittingStartTime = tic;
     
     % STRATEGIA PODZIAŁU zoptymalizowana dla małych zbiorów danych
     SPLIT_COUNTS = [9, 2, 3]; % Train: 9, Val: 2, Test: 3 próbki na klasę
@@ -163,6 +167,9 @@ try
         fprintf('✅ Images prepared for CNN: Train:[%s], Val:[%s], Test:[%s]\n', ...
             mat2str(size(X_train_images)), mat2str(size(X_val_images)), mat2str(size(X_test_images)));
     end
+    
+    splittingTime = toc(splittingStartTime);
+    fprintf('✅ Data splitting completed in %.2f seconds\n', splittingTime);
     
     %% KROK 4: WYBÓR STRATEGII OPTYMALIZACJI HIPERPARAMETRÓW
     fprintf('\n🎯 HYPERPARAMETER OPTIMIZATION STRATEGY\n');
@@ -244,11 +251,13 @@ try
         end
         
         if shouldOptimize
+            optimizationStartTime = tic;
+            
             % STRATEGIA 2: Optymalizacja hiperparametrów od zera
             if strcmp(modelType, 'cnn')
-                numTrials = 20; % Mniej prób dla CNN (wolniejsze trenowanie)
+                numTrials = 20;
             else
-                numTrials = 50; % Standardowa liczba prób dla PatternNet
+                numTrials = 50;
             end
             
             fprintf('🔍 Optimizing %s hyperparameters (%d trials)...\n', upper(modelType), numTrials);
@@ -261,17 +270,17 @@ try
                     trainData, valData, modelType, numTrials, [], logFile);
             end
             
+            optimizationTime = toc(optimizationStartTime);
+            
             optimizationResults.(modelType) = struct(...
                 'bestHyperparams', bestHyperparams, ...
                 'bestScore', bestScore, ...
                 'allResults', results, ...
-                'source', 'optimized');
+                'source', 'optimized', ...
+                'optimizationTime', optimizationTime);
             
-            fprintf('\n🎯 Best %s validation accuracy: %.2f%%\n', upper(modelType), bestScore * 100);
-            
-            if ~isempty(logFile)
-                logInfo(sprintf('Best %s validation accuracy: %.2f%%', upper(modelType), bestScore * 100), logFile);
-            end
+            fprintf('\n🎯 Best %s validation accuracy: %.2f%% (optimization: %.1f sec)\n', ...
+                upper(modelType), bestScore * 100, optimizationTime);
         end
     end
     
@@ -380,10 +389,7 @@ try
         end
     end
     
-    %% KROK 7: GENEROWANIE WIZUALIZACJI I ANALIZ PORÓWNAWCZYCH
-    fprintf('\n📊 Generating visualizations...\n');
-    
-    % IDENTYFIKACJA pomyślnie wytrenowanych modeli
+    % IDENTYFIKACJA POMYŚLNIE WYTRENOWANYCH MODELI
     successfulModels = {};
     for modelIdx = 1:length(models)
         modelType = models{modelIdx};
@@ -391,6 +397,45 @@ try
             successfulModels{end+1} = modelType;
         end
     end
+    
+    %% KROK 7: POMIAR SZYBKOŚCI IDENTYFIKACJI
+    if ~isempty(successfulModels)
+        fprintf('\n⚡ MEASURING IDENTIFICATION SPEED...\n');
+        fprintf('%s\n', repmat('=', 1, 50));
+        
+        totalOptimizationTime = 0;
+        totalTrainingTime = 0;
+        
+        for i = 1:length(successfulModels)
+            modelType = successfulModels{i};
+            model = finalModels.(modelType);
+            
+            % POMIAR SZYBKOŚCI IDENTYFIKACJI
+            if strcmp(modelType, 'cnn') && hasCNNData
+                identResults = measureIdentificationSpeed(model, imagesData.X_test, imagesData.Y_test, modelType);
+            else
+                identResults = measureIdentificationSpeed(model, testData.features, testData.labels, modelType);
+            end
+            
+            % ZAPISZ WYNIKI SZYBKOŚCI
+            finalModels.([modelType '_speed']) = identResults;
+            
+            % AKUMULUJ CZASY TRENOWANIA
+            if isfield(finalModels, [modelType '_results'])
+                trainTime = finalModels.([modelType '_results']).trainTime;
+                totalTrainingTime = totalTrainingTime + trainTime;
+            end
+            
+            % AKUMULUJ CZASY OPTYMALIZACJI
+            if isfield(optimizationResults, modelType) && isfield(optimizationResults.(modelType), 'optimizationTime')
+                optTime = optimizationResults.(modelType).optimizationTime;
+                totalOptimizationTime = totalOptimizationTime + optTime;
+            end
+        end
+    end
+    
+    %% KROK 8: GENEROWANIE WIZUALIZACJI I ANALIZ PORÓWNAWCZYCH
+    fprintf('\n📊 Generating visualizations...\n');
     
     if ~isempty(successfulModels)
         % SZCZEGÓŁOWE WIZUALIZACJE dla każdego modelu
@@ -416,7 +461,7 @@ try
         fprintf('⚠️  No successful models to visualize\n');
     end
     
-    %% KROK 8: PODSUMOWANIE KOŃCOWE I REKOMENDACJE
+    %% KROK 9: PODSUMOWANIE KOŃCOWE I REKOMENDACJE
     fprintf('\n%s\n', repmat('=', 1, 60));
     fprintf('📈 FINAL RESULTS SUMMARY\n');
     fprintf('%s\n', repmat('=', 1, 60));
@@ -474,6 +519,89 @@ try
     
     if ~isempty(logFile)
         logInfo('ML Pipeline completed successfully!', logFile);
+    end
+    
+    if ~isempty(successfulModels)
+        fprintf('\n⏱️  COMPLETE TIMING ANALYSIS\n');
+        fprintf('===========================\n');
+        
+        % CZASY PREPROCESSINGU (z metadata)
+        if isfield(metadata, 'timings')
+            fprintf('📋 PREPROCESSING PHASE:\n');
+            fprintf('  📥 Data Loading:        %.2f sec\n', metadata.timings.dataLoading);
+            fprintf('  🔄 Image Processing:    %.2f sec\n', metadata.timings.imagePreprocessing);
+            fprintf('  🔍 Minutiae Extraction: %.2f sec\n', metadata.timings.minutiaeExtraction);
+            fprintf('  🔧 Normalization:       %.2f sec\n', metadata.timings.normalization);
+            fprintf('  📊 Total Preprocessing: %.2f sec (%.1f min)\n\n', ...
+                metadata.timings.totalPreprocessing, metadata.timings.totalPreprocessing/60);
+        end
+        
+        % CZASY MACHINE LEARNING
+        fprintf('📋 MACHINE LEARNING PHASE:\n');
+        fprintf('  🔬 Dimensionality Reduction: %.2f sec\n', reductionTime);
+        fprintf('  📊 Data Splitting:           %.2f sec\n', splittingTime);
+        
+        for modelIdx = 1:length(successfulModels)
+            modelType = successfulModels{modelIdx};
+            
+            if isfield(optimizationResults, modelType) && isfield(optimizationResults.(modelType), 'optimizationTime')
+                optTime = optimizationResults.(modelType).optimizationTime;
+                fprintf('  🎯 %s Optimization:     %.1f sec\n', upper(modelType), optTime);
+            end
+            
+            if isfield(finalModels, [modelType '_results'])
+                trainTime = finalModels.([modelType '_results']).trainTime;
+                fprintf('  🚀 %s Final Training:   %.1f sec\n', upper(modelType), trainTime);
+            end
+            
+            % WYNIKI SZYBKOŚCI IDENTYFIKACJI
+            if isfield(finalModels, [modelType '_speed'])
+                speedResults = finalModels.([modelType '_speed']);
+                fprintf('  ⚡ %s Identification:   %.2f ms/sample (%.0f samples/sec)\n', ...
+                    upper(modelType), speedResults.avgTimeMs, speedResults.throughputSamplesPerSec);
+            end
+        end
+        
+        fprintf('  📊 Total ML Processing:      %.2f sec (%.1f min)\n\n', ...
+            reductionTime + splittingTime + totalOptimizationTime + totalTrainingTime, ...
+            (reductionTime + splittingTime + totalOptimizationTime + totalTrainingTime)/60);
+        
+        % CAŁKOWITY CZAS SESJI
+        if isfield(metadata, 'timings')
+            totalSessionTime = metadata.timings.totalPreprocessing + reductionTime + splittingTime + totalOptimizationTime + totalTrainingTime;
+            fprintf('🏁 TOTAL SESSION TIME: %.2f seconds (%.1f minutes)\n', totalSessionTime, totalSessionTime/60);
+            
+            % BREAKDOWN PROCENTOWY
+            fprintf('\n📊 TIME BREAKDOWN:\n');
+            fprintf('  Preprocessing: %.1f%% (%.1f sec)\n', (metadata.timings.totalPreprocessing/totalSessionTime)*100, metadata.timings.totalPreprocessing);
+            fprintf('  Optimization:  %.1f%% (%.1f sec)\n', (totalOptimizationTime/totalSessionTime)*100, totalOptimizationTime);
+            fprintf('  Training:      %.1f%% (%.1f sec)\n', (totalTrainingTime/totalSessionTime)*100, totalTrainingTime);
+            fprintf('  Other:         %.1f%% (%.1f sec)\n', ((reductionTime + splittingTime)/totalSessionTime)*100, reductionTime + splittingTime);
+            
+            % TABELA PORÓWNAWCZA MODELI
+            fprintf('\n📊 MODEL PERFORMANCE COMPARISON:\n');
+            fprintf('=====================================\n');
+            fprintf('%-12s | %-8s | %-8s | %-12s | %-15s\n', 'Model', 'Val Acc', 'Test Acc', 'Train Time', 'Speed (ms/sample)');
+            fprintf('%s\n', repmat('-', 1, 70));
+            
+            for i = 1:length(successfulModels)
+                modelType = successfulModels{i};
+                results = finalModels.([modelType '_results']);
+                valAcc = optimizationResults.(modelType).bestScore * 100;
+                testAcc = results.testAccuracy * 100;
+                trainTime = results.trainTime;
+                
+                if isfield(finalModels, [modelType '_speed'])
+                    avgSpeed = finalModels.([modelType '_speed']).avgTimeMs;
+                    speedStr = sprintf('%.2f', avgSpeed);
+                else
+                    speedStr = 'N/A';
+                end
+                
+                fprintf('%-12s | %6.2f%% | %6.2f%% | %8.1fs | %15s\n', ...
+                    upper(modelType), valAcc, testAcc, trainTime, speedStr);
+            end
+        end
     end
     
 catch ME
