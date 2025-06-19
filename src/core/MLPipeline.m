@@ -1,7 +1,43 @@
 function MLPipeline(allFeatures, validLabels, metadata, preprocessedImages, validImageIndices, logFile)
-% MLPIPELINE NAPRAWIONY - DODAJ logFile parameter
+% MLPIPELINE Kompleksowy pipeline uczenia maszynowego dla klasyfikacji odcisków palców
+%
+% Funkcja realizuje pełny cykl trenowania i ewaluacji modeli PatternNet i CNN,
+% obejmując optymalizację hiperparametrów, redukcję wymiarowości, podział danych
+% oraz szczegółową analizę porównawczą wyników. Automatycznie zarządza zapisem
+% optymalnych parametrów i generuje kompleksowe wizualizacje.
+%
+% Parametry wejściowe:
+%   allFeatures - macierz cech [n_samples × n_features] dla PatternNet
+%   validLabels - wektor etykiet klas [1×n] odpowiadający próbkom
+%   metadata - struktura z nazwami palców i informacjami o klasach
+%   preprocessedImages - cell array przetworzonych obrazów dla CNN (opcjonalny)
+%   validImageIndices - indeksy ważnych obrazów w preprocessedImages (opcjonalny)
+%   logFile - uchwyt pliku do logowania (opcjonalny, domyślnie [])
+%
+% Dane wyjściowe:
+%   - Wytrenowane modele zapisane w output/models/
+%   - Wizualizacje porównawcze w output/figures/
+%   - Tabela metryk wydajności w konsoli
+%   - Optymalne parametry dla przyszłego użycia (przy accuracy ≥95%)
+%
+% Obsługiwane modele:
+%   1. PatternNet - klasyfikacja na podstawie ekstraktowanych cech
+%   2. CNN - klasyfikacja bezpośrednio na obrazach (jeśli dostępne)
+%
+% Strategia optymalizacji:
+%   - Automatyczne wykrywanie zapisanych optymalnych parametrów
+%   - Random Search dla nowych hiperparametrów (20-50 prób)
+%   - Inteligentny podział danych [9:2:3] próbek na klasę
+%   - Finalne trenowanie na train+validation → test
+%
+% Przykład użycia:
+%   % Tylko PatternNet:
+%   MLPipeline(features, labels, metadata);
+%
+%   % PatternNet + CNN:
+%   MLPipeline(features, labels, metadata, images, imageIndices, logHandle);
 
-% NOWY PARAMETR logFile - z domyślną wartością
+% PARAMETR logFile z domyślną wartością
 if nargin < 6
     logFile = [];
 end
@@ -12,19 +48,19 @@ fprintf('                    ML PIPELINE - FINGERPRINT CLASSIFICATION     \n');
 fprintf('                         (PatternNet + CNN)                      \n');
 fprintf('=================================================================\n');
 
-% LOGOWANIE STARTU
+% LOGOWANIE ROZPOCZĘCIA PIPELINE
 if ~isempty(logFile)
     logInfo('=============================================================', logFile);
     logInfo('           ML PIPELINE - FINGERPRINT CLASSIFICATION          ', logFile);
     logInfo('=============================================================', logFile);
 end
 
-% Sprawdź argumenty
+% WALIDACJA ARGUMENTÓW WEJŚCIOWYCH
 if nargin < 3
     error('MLPipeline requires at least allFeatures, validLabels, and metadata');
 end
 
-% Czy mamy dane dla CNN?
+% SPRAWDZENIE DOSTĘPNOŚCI DANYCH DLA CNN
 hasCNNData = (nargin >= 5) && ~isempty(preprocessedImages) && ~isempty(validImageIndices);
 
 if hasCNNData
@@ -42,11 +78,11 @@ else
 end
 
 try
-    %% KROK 1: Podsumowanie danych
+    %% KROK 1: PODSUMOWANIE OTRZYMANYCH DANYCH
     fprintf('\n📂 Received Data Summary:\n');
     fprintf('✅ Features: %d samples with %d features\n', size(allFeatures, 1), size(allFeatures, 2));
     
-    % LOGOWANIE DANYCH
+    % LOGOWANIE STATYSTYK DANYCH
     if ~isempty(logFile)
         logInfo(sprintf('Features: %d samples with %d features', size(allFeatures, 1), size(allFeatures, 2)), logFile);
     end
@@ -59,7 +95,7 @@ try
         end
     end
     
-    % Sprawdź rozkład klas
+    % ANALIZA ROZKŁADU KLAS
     uniqueLabels = unique(validLabels);
     if ~isempty(logFile)
         logInfo('CLASS DISTRIBUTION:', logFile);
@@ -74,27 +110,27 @@ try
         end
     end
     
-    %% KROK 2: Redukcja wymiarowości (PRZED podziałem!)
+    %% KROK 2: REDUKCJA WYMIAROWOŚCI (przed podziałem danych!)
     fprintf('\n🔬 DIMENSIONALITY REDUCTION FOR PATTERNNET\n');
     fprintf('%s\n', repmat('=', 1, 60));
     
     [allFeatures, reductionInfo] = askForDimensionalityReduction(allFeatures, validLabels, metadata);
     
-    %% KROK 3: JEDEN PODZIAŁ DANYCH (po redukcji)
+    %% KROK 3: WSPÓLNY PODZIAŁ DANYCH (po redukcji wymiarowości)
     fprintf('\n📊 Splitting dataset...\n');
     
-    % SPLIT COUNTS dla optymalizacji
-    SPLIT_COUNTS = [9, 2, 3]; % Train: 9, Val: 2, Test: 3 per klasa
+    % STRATEGIA PODZIAŁU zoptymalizowana dla małych zbiorów danych
+    SPLIT_COUNTS = [9, 2, 3]; % Train: 9, Val: 2, Test: 3 próbki na klasę
     fprintf('🔧 Using optimized split: [%d, %d, %d] per class\n', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3));
     
     if ~isempty(logFile)
         logInfo(sprintf('Dataset split strategy: [%d, %d, %d] per class', SPLIT_COUNTS(1), SPLIT_COUNTS(2), SPLIT_COUNTS(3)), logFile);
     end
     
-    % JEDEN PODZIAŁ dla cech (PatternNet)
+    % PODZIAŁ CECH dla PatternNet
     [trainData, valData, testData] = splitDataset(allFeatures, validLabels, metadata, SPLIT_COUNTS);
     
-    % Podział obrazów dla CNN (jeśli dostępne) - UŻYWA TYCH SAMYCH INDEKSÓW
+    % PODZIAŁ OBRAZÓW dla CNN (używa tych samych indeksów próbek)
     imagesData = [];
     if hasCNNData
         fprintf('\n🖼️  Splitting images for CNN (using same indices)...\n');
@@ -105,7 +141,7 @@ try
         fprintf('\n🔧 Preparing images for CNN training...\n');
         targetSize = [128, 128];
         
-        % Konwertuj obrazy do 4D arrays
+        % KONWERSJA OBRAZÓW do formatów CNN (4D arrays)
         X_train_images = prepareImagesForCNN(trainImages.images, targetSize, true);
         Y_train_images = categorical(trainImages.labels);
         
@@ -115,7 +151,7 @@ try
         X_test_images = prepareImagesForCNN(testImages.images, targetSize, true);
         Y_test_images = categorical(testImages.labels);
         
-        % Struktura z danymi obrazów dla CNN
+        % STRUKTURA z danymi obrazów dla CNN
         imagesData = struct();
         imagesData.X_train = X_train_images;
         imagesData.Y_train = Y_train_images;
@@ -128,11 +164,11 @@ try
             mat2str(size(X_train_images)), mat2str(size(X_val_images)), mat2str(size(X_test_images)));
     end
     
-    %% KROK 4: Wybór strategii optymalizacji - UPROSZCZONA
+    %% KROK 4: WYBÓR STRATEGII OPTYMALIZACJI HIPERPARAMETRÓW
     fprintf('\n🎯 HYPERPARAMETER OPTIMIZATION STRATEGY\n');
     fprintf('%s\n', repmat('=', 1, 60));
     
-    % Sprawdź czy są dostępne zapisane PARAMETRY
+    % SPRAWDZENIE dostępności zapisanych optymalnych parametrów
     savedModelsDir = 'output/models';
     availableParameters = checkAvailableOptimalParameters(savedModelsDir, models);
     
@@ -152,7 +188,7 @@ try
         end
     else
         fprintf('No saved optimal parameters found. Will use Random Search optimization.\n');
-        strategy = 2; % Force optimization
+        strategy = 2; % Wymuś optymalizację
     end
     
     fprintf('\n📋 Selected strategy: ');
@@ -163,7 +199,7 @@ try
             fprintf('Random Search hyperparameter optimization\n');
     end
     
-    %% KROK 5: Optymalizacja hiperparametrów
+    %% KROK 5: OPTYMALIZACJA HIPERPARAMETRÓW DLA KAŻDEGO MODELU
     optimizationResults = struct();
     
     for modelIdx = 1:length(models)
@@ -177,20 +213,20 @@ try
             logInfo(sprintf('PROCESSING %s', upper(modelType)), logFile);
         end
         
-        % Sprawdź strategię dla tego modelu
+        % SPRAWDZENIE strategii dla aktualnego modelu
         shouldOptimize = true;
         optimalParams = [];
         
         if strategy == 1
-            % STRATEGIA 1: Załaduj optymalne parametry
+            % STRATEGIA 1: Załaduj zapisane optymalne parametry
             [optimalParams, loadSuccess] = loadOptimalParameters(savedModelsDir, modelType);
             
             if loadSuccess
                 fprintf('✅ Loaded optimal parameters for %s\n', upper(modelType));
                 shouldOptimize = false;
                 
-                % USUNIĘTE: Niepotrzebne oszacowanie - użyj domyślną
-                estimatedScore = 0.90; % Domyślne oszacowanie dla załadowanych parametrów
+                % OSZACOWANIE wydajności na podstawie historycznych danych
+                estimatedScore = 0.90; % Konserwatywne oszacowanie dla załadowanych parametrów
                 
                 optimizationResults.(modelType) = struct();
                 optimizationResults.(modelType).bestHyperparams = optimalParams;
@@ -203,26 +239,26 @@ try
             else
                 fprintf('⚠️  Failed to load optimal parameters for %s.\n', upper(modelType));
                 fprintf('    Switching to optimization...\n');
-                strategy = 2; % Auto-fallback na optymalizację
+                strategy = 2; % Automatyczny fallback na optymalizację
             end
         end
         
         if shouldOptimize
-            % Standardowa optymalizacja od zera
+            % STRATEGIA 2: Optymalizacja hiperparametrów od zera
             if strcmp(modelType, 'cnn')
-                numTrials = 20; % Zmniejszone dla CNN (wolniejsze)
+                numTrials = 20; % Mniej prób dla CNN (wolniejsze trenowanie)
             else
-                numTrials = 50; % Standardowe dla PatternNet
+                numTrials = 50; % Standardowa liczba prób dla PatternNet
             end
             
             fprintf('🔍 Optimizing %s hyperparameters (%d trials)...\n', upper(modelType), numTrials);
             
             if strcmp(modelType, 'cnn') && hasCNNData
                 [bestHyperparams, bestScore, results] = optimizeHyperparameters(...
-                    trainData, valData, modelType, numTrials, imagesData, logFile); % DODAJ logFile
+                    trainData, valData, modelType, numTrials, imagesData, logFile);
             else
                 [bestHyperparams, bestScore, results] = optimizeHyperparameters(...
-                    trainData, valData, modelType, numTrials, [], logFile); % DODAJ logFile
+                    trainData, valData, modelType, numTrials, [], logFile);
             end
             
             optimizationResults.(modelType) = struct(...
@@ -239,7 +275,7 @@ try
         end
     end
     
-    %% KROK 6: Trenuj finalne modele NA TRAIN+VALIDATION
+    %% KROK 6: TRENOWANIE FINALNYCH MODELI na połączonych danych train+validation
     fprintf('\n%s\n', repmat('=', 1, 60));
     fprintf('🏁 TRAINING FINAL MODELS (Train + Validation Data)\n');
     fprintf('%s\n', repmat('=', 1, 60));
@@ -253,7 +289,7 @@ try
     for modelIdx = 1:length(models)
         modelType = models{modelIdx};
         
-        % SPRAWDŹ czy optymalizacja się udała
+        % SPRAWDZENIE czy optymalizacja się powiodła
         if ~isfield(optimizationResults, modelType) || optimizationResults.(modelType).bestScore == 0
             fprintf('\n⚠️  Skipping %s - optimization failed\n', upper(modelType));
             if ~isempty(logFile)
@@ -271,7 +307,7 @@ try
         
         try
             if strcmp(modelType, 'cnn') && hasCNNData
-                % CNN - trenuj na obrazach (train+val -> test)
+                % CNN - trenowanie na obrazach (train+val → test)
                 fprintf('   📊 Using Train+Val images for final training\n');
                 fprintf('   📈 Train images: %d, Val images: %d, Test images: %d\n', ...
                     size(imagesData.X_train, 4), size(imagesData.X_val, 4), size(imagesData.X_test, 4));
@@ -279,7 +315,7 @@ try
                 [finalModel, trainResults] = trainFinalModelCNN(imagesData, bestHyperparams);
                 
             elseif strcmp(modelType, 'patternnet')
-                % PatternNet - POŁĄCZ train+val dla finalnego treningu
+                % PatternNet - łączenie train+val dla finalnego trenowania
                 fprintf('   📊 Combining Train+Val features for final training\n');
                 fprintf('   📈 Train samples: %d, Val samples: %d, Test samples: %d\n', ...
                     length(trainData.labels), length(valData.labels), length(testData.labels));
@@ -298,9 +334,9 @@ try
                 continue;
             end
             
-            % POPRAWKA: Dodaj validation accuracy do results - BEZPIECZNE
+            % DODANIE validation accuracy do wyników (bezpieczne przypisanie)
             if isfield(optimizationResults, modelType) && isfield(optimizationResults.(modelType), 'bestScore')
-                trainResults.valAccuracy = optimizationResults.(modelType).bestScore;  % Z optymalizacji!
+                trainResults.valAccuracy = optimizationResults.(modelType).bestScore;  % Z fazy optymalizacji
             else
                 trainResults.valAccuracy = 0; % Fallback dla nieprawidłowych danych
             end
@@ -312,11 +348,11 @@ try
                 upper(modelType), trainResults.testAccuracy * 100, ...
                 strcmp(modelType, 'cnn'), 'train+val images', 'train+val features');
             
-            % TYLKO PARAMETRY: Zapisz optymalne parametry przy >95% TEST accuracy
-            shouldSaveOptimal = (trainResults.testAccuracy >= 0.95) && ... % TYLKO test accuracy!
+            % ZAPIS OPTYMALNYCH PARAMETRÓW przy wysokiej jakości (≥95% TEST accuracy)
+            shouldSaveOptimal = (trainResults.testAccuracy >= 0.95) && ... % Tylko test accuracy!
                 isfield(optimizationResults, modelType) && ...
                 isfield(optimizationResults.(modelType), 'source') && ...
-                strcmp(optimizationResults.(modelType).source, 'optimized'); % Nie z załadowanych
+                strcmp(optimizationResults.(modelType).source, 'optimized'); % Nie z wcześniej załadowanych
             
             if shouldSaveOptimal
                 saveOptimalParameters(modelType, bestHyperparams, trainResults, optimizationResults.(modelType));
@@ -344,10 +380,10 @@ try
         end
     end
     
-    %% KROK 6: Wizualizacje i porównania
+    %% KROK 7: GENEROWANIE WIZUALIZACJI I ANALIZ PORÓWNAWCZYCH
     fprintf('\n📊 Generating visualizations...\n');
     
-    % Sprawdź które modele się udały
+    % IDENTYFIKACJA pomyślnie wytrenowanych modeli
     successfulModels = {};
     for modelIdx = 1:length(models)
         modelType = models{modelIdx};
@@ -357,14 +393,14 @@ try
     end
     
     if ~isempty(successfulModels)
-        % Szczegółowe wizualizacje dla każdego modelu
+        % SZCZEGÓŁOWE WIZUALIZACJE dla każdego modelu
         for i = 1:length(successfulModels)
             modelType = successfulModels{i};
             model = finalModels.(modelType);
             results = finalModels.([modelType '_results']);
             
             if strcmp(modelType, 'cnn')
-                % Dla CNN użyj obrazów testowych
+                % Dla CNN użyj danych obrazowych testowych
                 createModelVisualization(model, results, modelType, imagesData);
             else
                 % Dla PatternNet użyj cech testowych
@@ -372,7 +408,7 @@ try
             end
         end
         
-        % Porównanie modeli jeśli mamy więcej niż jeden
+        % PORÓWNANIE MODELI jeśli dostępne więcej niż jeden
         if length(successfulModels) > 1
             compareModels(finalModels, optimizationResults, successfulModels);
         end
@@ -380,7 +416,7 @@ try
         fprintf('⚠️  No successful models to visualize\n');
     end
     
-    %% KROK 7: Podsumowanie końcowe
+    %% KROK 8: PODSUMOWANIE KOŃCOWE I REKOMENDACJE
     fprintf('\n%s\n', repmat('=', 1, 60));
     fprintf('📈 FINAL RESULTS SUMMARY\n');
     fprintf('%s\n', repmat('=', 1, 60));
@@ -390,7 +426,7 @@ try
         return;
     end
     
-    % Podsumowanie dla każdego udanego modelu
+    % PODSUMOWANIE dla każdego pomyślnego modelu
     bestAcc = 0;
     bestModel = '';
     
@@ -409,18 +445,18 @@ try
             fprintf('  🏆 HIGH PERFORMANCE MODEL SAVED!\n');
         end
         
-        % Śledź najlepszy model
+        % ŚLEDZENIE najlepszego modelu
         if testAcc > bestAcc
             bestAcc = testAcc;
             bestModel = modelType;
         end
     end
     
-    % Winner
+    % OGŁOSZENIE ZWYCIĘZCY
     if ~isempty(bestModel)
         fprintf('\n🏆 BEST MODEL: %s with %.2f%% test accuracy!\n', upper(bestModel), bestAcc);
         
-        % Dodatkowe podsumowanie dla winnera
+        % OCENA JAKOŚCI najlepszego modelu
         if bestAcc > 90
             fprintf('🎉 EXCELLENT PERFORMANCE! Model ready for deployment.\n');
         elseif bestAcc > 80
@@ -449,17 +485,17 @@ catch ME
 end
 end
 
-%% HELPER FUNCTIONS
+%% FUNKCJE POMOCNICZE DLA TRENOWANIA FINALNYCH MODELI
 
 function [finalModel, results] = trainFinalModel(trainData, testData, modelType, hyperparams)
-% TRAINFINALMODEL Trenuje finalny model dla cech
+% TRAINFINALMODEL Trenuje finalny model PatternNet na cechach
 
 results = struct();
 tic;
 
 switch lower(modelType)
     case 'patternnet'
-        % PatternNet
+        % UTWORZENIE sieci PatternNet z optymalnymi hiperparametrami
         net = createPatternNet(hyperparams);
         
         X_train = trainData.features';
@@ -467,7 +503,7 @@ switch lower(modelType)
         
         finalModel = train(net, X_train, T_train);
         
-        % Testuj
+        % TESTOWANIE na zbiorze testowym
         X_test = testData.features';
         Y_test = finalModel(X_test);
         [~, predicted] = max(Y_test, [], 1);
@@ -486,12 +522,12 @@ results.hyperparams = hyperparams;
 end
 
 function [finalModel, results] = trainFinalModelCNN(imagesData, hyperparams)
-% TRAINFINALMODELCNN Trenuje finalny model CNN na TRAIN+VAL -> TEST
+% TRAINFINALMODELCNN Trenuje finalny model CNN na połączonych danych train+val → test
 
 results = struct();
 tic;
 
-% POŁĄCZ train + val dla finalnego trenowania (LEPSZA PRAKTYKA)
+% ŁĄCZENIE train + val dla finalnego trenowania (lepsza praktyka)
 fprintf('🔗 Combining train and validation sets for final CNN training...\n');
 
 X_combined = cat(4, imagesData.X_train, imagesData.X_val);
@@ -500,22 +536,22 @@ Y_combined = [imagesData.Y_train; imagesData.Y_val];
 fprintf('   Combined training set: [%s] (was [%s] + [%s])\n', ...
     mat2str(size(X_combined)), mat2str(size(imagesData.X_train)), mat2str(size(imagesData.X_val)));
 
-% Test data pozostaje nietknięty
+% ZBIÓR TESTOWY pozostaje niezmieniony
 X_test = imagesData.X_test;
 Y_test = imagesData.Y_test;
 
 fprintf('   Test set: [%s] (unchanged)\n', mat2str(size(X_test)));
 
-% Utwórz CNN z finalnymi hiperparametrami
+% UTWORZENIE CNN z finalnymi hiperparametrami
 inputSize = size(X_combined(:,:,:,1));
 cnnStruct = createCNN(hyperparams, 5, inputSize);
 
 fprintf('🚀 Training final CNN with combined data...\n');
 
-% Trenuj na train+val
+% TRENOWANIE na train+val
 finalModel = trainNetwork(X_combined, Y_combined, cnnStruct.layers, cnnStruct.options);
 
-% Testuj TYLKO na test set
+% EWALUACJA tylko na zbiorze testowym
 fprintf('🎯 Evaluating on test set...\n');
 predicted = classify(finalModel, X_test);
 results.testAccuracy = sum(predicted == Y_test) / length(Y_test);
@@ -531,9 +567,9 @@ fprintf('📊 Final CNN trained on %d samples, tested on %d samples\n', ...
 end
 
 function saveOptimalParameters(modelType, hyperparams, results, optimizationResults)
-% SAVEOPTIMALPARAMETERS Zapisuje optymalne parametry TYLKO przy >95% TEST accuracy
+% SAVEOPTIMALPARAMETERS Zapisuje optymalne parametry tylko przy ≥95% TEST accuracy
 
-% WALIDACJA: Upewnij się że to rzeczywiście >95% TEST accuracy
+% WALIDACJA: Upewnij się że test accuracy rzeczywiście ≥95%
 if results.testAccuracy < 0.95
     fprintf('⚠️  Cannot save optimal parameters - TEST accuracy %.1f%% < 95%%\n', results.testAccuracy * 100);
     return;
@@ -547,7 +583,7 @@ end
 timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
 modelTypeLower = lower(modelType);
 
-% NAZWY PLIKÓW OPARTE NA TEST ACCURACY
+% NAZWY PLIKÓW oparte na test accuracy z opisowymi tagami
 if results.testAccuracy >= 1.0
     qualityTag = 'perfect_100pct_TEST';
     qualityNote = 'Perfect 100% TEST accuracy achieved through optimization';
@@ -564,21 +600,21 @@ end
 
 filepath = fullfile(outputDir, filename);
 
-% Struktura z optymalnymi parametrami - PODKREŚL TEST ACCURACY
+% STRUKTURA z optymalnymi parametrami - podkreślenie test accuracy
 optimalData = struct();
 optimalData.hyperparams = hyperparams;
 optimalData.modelType = modelType;
-optimalData.testAccuracy = results.testAccuracy;        % GŁÓWNY WSKAŹNIK
-optimalData.validationAccuracy = optimizationResults.bestScore; % Pomocniczy
+optimalData.testAccuracy = results.testAccuracy;        % Główny wskaźnik jakości
+optimalData.validationAccuracy = optimizationResults.bestScore; % Wskaźnik pomocniczy
 optimalData.trainTime = results.trainTime;
 optimalData.saveTimestamp = timestamp;
 optimalData.source = qualityTag;
 optimalData.isHighQuality = true;
 
-% DODANE: Wyraźne oznaczenie że to TEST accuracy
-optimalData.qualityMetric = 'TEST_ACCURACY';           % NOWE
-optimalData.testAccuracyScore = results.testAccuracy;  % NOWE - wyraźne
-optimalData.validationAccuracyScore = optimizationResults.bestScore; % NOWE - wyraźne
+% DODANE: Wyraźne oznaczenie że kryterium to test accuracy
+optimalData.qualityMetric = 'TEST_ACCURACY';           % Kryterium główne
+optimalData.testAccuracyScore = results.testAccuracy;  % Wyraźne oznaczenie
+optimalData.validationAccuracyScore = optimizationResults.bestScore; % Wyraźne oznaczenie
 optimalData.note = qualityNote;
 
 save(filepath, 'optimalData');
@@ -588,10 +624,10 @@ fprintf('   These parameters achieved %.1f%% TEST accuracy (validation: %.1f%%)!
     results.testAccuracy * 100, optimizationResults.bestScore * 100);
 end
 
-%% HELPER FUNCTIONS DLA OPTYMALNYCH PARAMETRÓW
+%% FUNKCJE POMOCNICZE DLA ZARZĄDZANIA OPTYMALNYMI PARAMETRAMI
 
 function availableModels = checkAvailableOptimalParameters(modelsDir, requestedModels)
-% CHECKAVAILABLEOPTIMALPARAMETERS Sprawdza które modele mają zapisane optymalne PARAMETRY
+% CHECKAVAILABLEOPTIMALPARAMETERS Sprawdza które modele mają zapisane optymalne parametry
 
 availableModels = {};
 
@@ -602,14 +638,14 @@ end
 for i = 1:length(requestedModels)
     modelType = requestedModels{i};
     
-    % Szukaj TYLKO plików z optymalnych PARAMETRÓW
+    % SZUKANIE tylko plików z optymalnymi parametrami
     pattern = sprintf('%s_OPTIMAL_*.mat', modelType);
     files = dir(fullfile(modelsDir, pattern));
     
     if ~isempty(files)
         availableModels{end+1} = modelType;
         
-        % POKAZUJ najnowszy plik dla informacji
+        % POKAZANIE najnowszego pliku dla informacji
         [~, newestIdx] = max([files.datenum]);
         newestFile = files(newestIdx);
         
@@ -632,7 +668,7 @@ end
 end
 
 function [optimalParams, success] = loadOptimalParameters(modelsDir, modelType)
-% LOADOPTIMALPARAMETERS Ładuje TYLKO optymalne parametry - UPROSZCZONA WERSJA
+% LOADOPTIMALPARAMETERS Ładuje najnowsze optymalne parametry dla modelu
 
 optimalParams = [];
 success = false;
@@ -641,7 +677,7 @@ if ~exist(modelsDir, 'dir')
     return;
 end
 
-% TYLKO JEDNA STRATEGIA: Najnowsze pliki z OPTIMAL
+% WYSZUKIWANIE plików z optymalnymi parametrami
 pattern = sprintf('%s_OPTIMAL_*.mat', modelType);
 files = dir(fullfile(modelsDir, pattern));
 
@@ -649,7 +685,7 @@ if isempty(files)
     return;
 end
 
-% Sortuj chronologicznie - najnowsze pierwsze
+% SORTOWANIE chronologiczne - najnowsze pliki pierwsze
 [~, sortIdx] = sort([files.datenum], 'descend');
 selectedFile = files(sortIdx(1));
 
@@ -662,7 +698,7 @@ try
         optimalParams = optimalData.hyperparams;
         success = true;
         
-        % KOMUNIKAT
+        % KOMUNIKAT o załadowanych parametrach
         if isfield(optimalData, 'testAccuracy')
             accuracy = optimalData.testAccuracy * 100;
             
@@ -689,7 +725,7 @@ end
 end
 
 function [reducedFeatures, reductionInfo] = askForDimensionalityReduction(allFeatures, validLabels, metadata)
-% ASKFORDIMENSIONALITYREDUCTION Pyta użytkownika o redukcję wymiarowości - BEZ LDA
+% ASKFORDIMENSIONALITYREDUCTION Interaktywny wybór metody redukcji wymiarowości
 
 fprintf('PatternNet has %d features for %d samples (ratio: %.2f)\n', ...
     size(allFeatures, 2), size(allFeatures, 1), size(allFeatures, 1)/size(allFeatures, 2));
@@ -711,7 +747,7 @@ originalFeatures = allFeatures;
 reductionInfo = [];
 
 switch reductionChoice
-    case 1 % MDA
+    case 1 % MDA (Multiple Discriminant Analysis)
         fprintf('🔍 Applying MDA (Multiple Discriminant Analysis)...\n');
         params = struct('maxComponents', 4);
         [reducedFeatures, reductionInfo] = reduceDimensionality(allFeatures, 'mda', params, validLabels);
@@ -725,7 +761,7 @@ switch reductionChoice
             fprintf('⚠️  MDA visualization failed\n');
         end
         
-    case 2 % PCA
+    case 2 % PCA (Principal Component Analysis)
         fprintf('🔍 Applying PCA (unsupervised)...\n');
         params = struct('varianceThreshold', 0.95, 'maxComponents', 15);
         [reducedFeatures, reductionInfo] = reduceDimensionality(allFeatures, 'pca', params);
@@ -739,11 +775,11 @@ switch reductionChoice
             fprintf('⚠️  PCA visualization failed\n');
         end
         
-    case 3 % BEZ REDUKCJI
+    case 3 % BEZ REDUKCJI WYMIAROWOŚCI
         fprintf('📊 Using all %d original features\n', size(allFeatures, 2));
         reducedFeatures = allFeatures;
         
-        % Minimal reductionInfo for consistency
+        % MINIMALNA struktura reductionInfo dla spójności
         reductionInfo = struct();
         reductionInfo.method = 'none';
         reductionInfo.originalDims = size(allFeatures, 2);

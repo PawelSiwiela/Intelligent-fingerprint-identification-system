@@ -1,25 +1,36 @@
 function saveProcessedData(preprocessedImages, allMinutiae, allFeatures, validImageIndices, labels, metadata, outputDir)
 % SAVEPROCESSEDDATA Zapisuje przetworzone dane zamiast oryginalnych odcisków
 %
-% Argumenty:
+% Funkcja zabezpiecza dane biometryczne poprzez zapisanie tylko przetworzonych
+% form (szkielety, minucje, cechy numeryczne) bez oryginalnych odcisków palców.
+% Tworzy kompletny dataset anonimowych danych bezpiecznych do udostępniania.
+%
+% Parametry wejściowe:
 %   preprocessedImages - obrazy po preprocessingu (szkielety)
 %   allMinutiae - wykryte minucje
 %   allFeatures - ekstraktowane cechy
 %   validImageIndices - indeksy prawidłowych obrazów
 %   labels - etykiety klas
 %   metadata - metadane
-%   outputDir - katalog wyjściowy
+%   outputDir - katalog wyjściowy (opcjonalny)
+%
+% Dane wyjściowe:
+%   - preprocessed_images_[timestamp].mat - szkielety linii papilarnych
+%   - minutiae_data_[timestamp].mat - punkty charakterystyczne
+%   - features_data_[timestamp].mat - wektory cech numerycznych
+%   - complete_anonymized_dataset_[timestamp].mat - kompletny dataset
+%   - README_ANONYMIZED_DATA.txt - dokumentacja bezpieczeństwa
 
 if nargin < 7
     outputDir = 'output/processed_data';
 end
 
-% Utwórz katalog jeśli nie istnieje
+% UTWÓRZ katalog jeśli nie istnieje
 if ~exist(outputDir, 'dir')
     mkdir(outputDir);
 end
 
-% Timestamp dla unikalnych nazw
+% TIMESTAMP dla unikalnych nazw plików
 timestamp = datestr(now, 'yyyy-mm-dd_HH-MM-SS');
 
 %% 1. ZAPISZ PRZEPROCESOWANE OBRAZY (szkielety)
@@ -40,7 +51,7 @@ save(filepath, 'processedData', '-v7.3'); % -v7.3 dla dużych plików
 fprintf('✅ Preprocessed images saved: %s\n', filename);
 fprintf('   Contains %d skeleton images (no original biometric data)\n', length(processedData.images));
 
-%% 2. ZAPISZ MINUCJE
+%% 2. ZAPISZ MINUCJE (punkty charakterystyczne)
 fprintf('\n💾 Saving detected minutiae...\n');
 
 minutiaeData = struct();
@@ -51,7 +62,7 @@ minutiaeData.metadata = metadata;
 minutiaeData.timestamp = timestamp;
 minutiaeData.description = 'Extracted minutiae points [x, y, angle, type, quality] - ANONYMIZED DATA';
 
-% Statystyki minucji
+% STATYSTYKI minucji
 totalMinutiae = 0;
 for i = 1:length(minutiaeData.minutiae)
     if ~isempty(minutiaeData.minutiae{i})
@@ -70,7 +81,7 @@ save(filepath, 'minutiaeData', '-v7.3');
 fprintf('✅ Minutiae data saved: %s\n', filename);
 fprintf('   Contains %d minutiae points from %d images\n', totalMinutiae, length(minutiaeData.minutiae));
 
-%% 3. ZAPISZ CECHY (features)
+%% 3. ZAPISZ CECHY (wektory numeryczne)
 fprintf('\n💾 Saving extracted features...\n');
 
 featuresData = struct();
@@ -81,7 +92,7 @@ featuresData.metadata = metadata;
 featuresData.timestamp = timestamp;
 featuresData.description = 'Numerical feature vectors extracted from minutiae - COMPLETELY ANONYMIZED';
 
-% Informacje o cechach
+% INFORMACJE o strukturze cech
 featuresData.featureInfo = struct();
 featuresData.featureInfo.numFeatures = size(allFeatures, 2);
 featuresData.featureInfo.numSamples = size(allFeatures, 1);
@@ -89,7 +100,7 @@ featuresData.featureInfo.featureNames = {
     'MinutiaeCount', 'EndpointCount', 'BifurcationCount', 'AverageQuality',
     'CentroidX', 'CentroidY', 'OrientationMean', 'OrientationStd',
     'SpatialSpread', 'QualityVariance', 'EndpointRatio', 'MinutiaDensity',
-    % ... dodaj więcej nazw cech
+    % ... dodaj więcej nazw cech w razie potrzeby
     };
 
 filename = sprintf('features_data_%s.mat', timestamp);
@@ -99,7 +110,7 @@ save(filepath, 'featuresData', '-v7.3');
 fprintf('✅ Features data saved: %s\n', filename);
 fprintf('   Contains %d feature vectors with %d features each\n', size(allFeatures, 1), size(allFeatures, 2));
 
-%% 4. ZAPISZ KOMPLETNY DATASET (wszystko w jednym)
+%% 4. ZAPISZ KOMPLETNY DATASET (wszystko w jednym pliku)
 fprintf('\n💾 Saving complete anonymized dataset...\n');
 
 completeDataset = struct();
@@ -110,7 +121,7 @@ completeDataset.labels = labels(validImageIndices);
 completeDataset.timestamp = timestamp;
 completeDataset.description = 'Complete anonymized fingerprint dataset - NO ORIGINAL BIOMETRIC DATA';
 
-% Usuń ścieżki do oryginalnych plików z metadanych
+% USUŃ ścieżki do oryginalnych plików z metadanych (bezpieczeństwo)
 safeMetadata = metadata;
 if isfield(safeMetadata, 'imagePaths')
     safeMetadata = rmfield(safeMetadata, 'imagePaths');
@@ -119,7 +130,7 @@ if isfield(safeMetadata, 'imageNames')
     safeMetadata = rmfield(safeMetadata, 'imageNames');
 end
 
-% DODAJ description do safeMetadata
+% DODAJ opis bezpieczeństwa do metadanych
 safeMetadata.description = 'Complete anonymized fingerprint dataset - NO ORIGINAL BIOMETRIC DATA';
 safeMetadata.timestamp = timestamp;
 
@@ -131,7 +142,7 @@ save(filepath, 'completeDataset', '-v7.3');
 
 fprintf('✅ Complete anonymized dataset saved: %s\n', filename);
 
-%% 5. STWÓRZ README
+%% 5. STWÓRZ README (dokumentacja bezpieczeństwa)
 fprintf('\n📝 Creating README file...\n');
 
 readmeFile = fullfile(outputDir, 'README_ANONYMIZED_DATA.txt');
@@ -161,7 +172,7 @@ fclose(fid);
 
 fprintf('✅ README file created: README_ANONYMIZED_DATA.txt\n');
 
-%% PODSUMOWANIE
+%% PODSUMOWANIE eksportu danych
 fprintf('\n🎉 ANONYMIZED DATA EXPORT COMPLETED!\n');
 fprintf('=====================================\n');
 fprintf('Output directory: %s\n', outputDir);

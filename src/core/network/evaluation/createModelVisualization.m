@@ -1,10 +1,24 @@
 function createModelVisualization(model, results, modelType, testData)
-% CREATEMODELVISUALIZATION Kompletna analiza modelu + struktura + konwergencja
+% CREATEMODELVISUALIZATION Kompleksowa wizualizacja analizy modelu
+%
+% Funkcja generuje dwuczęściową analizę wizualną wytrenowanego modelu:
+% 1. Podstawowe metryki (confusion matrix, klasyfikacja, porównania)
+% 2. Struktura sieci neuronowej oraz krzywe konwergencji treningu
+%
+% Parametry wejściowe:
+%   model - wytrenowany model (PatternNet lub CNN)
+%   results - struktura wyników z metrykami wydajności
+%   modelType - typ modelu: 'patternnet' lub 'cnn'
+%   testData - dane testowe (opcjonalny, dla kompatybilności)
+%
+% Dane wyjściowe:
+%   - Figura 1: Podstawowe metryki (PNG) w output/figures/
+%   - Figura 2: Struktura sieci + konwergencja (PNG) w output/figures/
 
 outputDir = 'output/figures';
 if ~exist(outputDir, 'dir'), mkdir(outputDir); end
 
-%% FIGURA 1: PODSTAWOWE METRYKI (pozostaje bez zmian)
+%% FIGURA 1: PODSTAWOWE METRYKI WYDAJNOŚCI
 figure('Position', [50, 50, 1000, 800]);
 
 %% 1. CONFUSION MATRIX (górny lewy)
@@ -35,7 +49,11 @@ createNetworkStructureVisualization(model, results, modelType, outputDir);
 end
 
 function createNetworkStructureVisualization(model, results, modelType, outputDir)
-% CREATENETWORKSTRUCTUREVISUALIZATION Wizualizacja struktury i konwergencji
+% CREATENETWORKSTRUCTUREVISUALIZATION Wizualizacja architektury i treningu
+%
+% Generuje dwuczęściową wizualizację zaawansowaną:
+% - Subplot 1: Architektura sieci (węzły, warstwy, połączenia)
+% - Subplot 2: Krzywe konwergencji treningu (loss, accuracy)
 
 figure('Position', [100, 100, 1400, 600]);
 
@@ -43,11 +61,11 @@ figure('Position', [100, 100, 1400, 600]);
 subplot(1, 2, 1);
 
 if strcmp(modelType, 'patternnet')
-    % PATTERNNET - wizualizacja warstw
+    % PATTERNNET - wizualizacja warstw fully-connected
     plotPatternNetStructure(model, results);
     
 elseif strcmp(modelType, 'cnn')
-    % CNN - wizualizacja architektury
+    % CNN - wizualizacja architektury konwolucyjnej
     plotCNNStructure(model, results);
 end
 
@@ -55,24 +73,27 @@ end
 subplot(1, 2, 2);
 plotTrainingConvergence(model, results, modelType);
 
-% Główny tytuł
+% TYTUŁ GŁÓWNY FIGURY
 sgtitle(sprintf('%s - Network Structure & Training Convergence', upper(modelType)), ...
     'FontSize', 16, 'FontWeight', 'bold');
 
-% Zapisz
+% ZAPIS FIGURY
 saveas(gcf, fullfile(outputDir, sprintf('%s_network_structure.png', modelType)));
 close(gcf);
 end
 
 function plotPatternNetStructure(model, results)
-% PLOTPATTERNNETSTRUCTURE Wizualizacja struktury PatternNet - POPRAWIONE KOLORY
+% PLOTPATTERNNETSTRUCTURE Wizualizacja architektury PatternNet
+%
+% Rysuje diagram sieci z węzłami, warstwami i połączeniami.
+% Używa RGB kolorów dla kompatybilności z różnymi wersjami MATLAB.
 
 try
-    % Pobierz informacje o warstwach
+    % POBRANIE informacji o strukturze sieci
     inputSize = model.inputs{1}.size;
     hiddenSizes = [];
     
-    % Znajdź ukryte warstwy
+    % ZNAJDŹ ukryte warstwy
     for i = 1:model.numLayers
         if i < model.numLayers % Nie ostatnia warstwa
             hiddenSizes(end+1) = model.layers{i}.size;
@@ -81,7 +102,7 @@ try
     
     outputSize = model.outputs{end}.size;
     
-    % Rysuj architekturę sieci
+    % PRZYGOTOWANIE danych do wizualizacji
     layers = [inputSize, hiddenSizes, outputSize];
     layerNames = cell(1, length(layers));
     layerNames{1} = sprintf('Input\n(%d)', inputSize);
@@ -91,16 +112,17 @@ try
     end
     layerNames{end} = sprintf('Output\n(%d)', outputSize);
     
-    % Pozycje warstw
+    % POZYCJE warstw na wykresie
     x_positions = 1:length(layers);
     y_center = 0;
     
-    % POPRAWIONE KOLORY - używaj RGB arrays zamiast nazw
+    % KOLORY warstw (RGB arrays dla kompatybilności)
     colors = [0.8, 0.2, 0.2; repmat([0.2, 0.6, 0.8], length(hiddenSizes), 1); 0.2, 0.8, 0.2];
     
     maxNodes = max(layers);
     nodeRadius = 0.3;
     
+    % RYSOWANIE węzłów dla każdej warstwy
     for i = 1:length(layers)
         numNodes = layers(i);
         
@@ -111,9 +133,9 @@ try
             y_positions = linspace(-maxNodes/4, maxNodes/4, numNodes);
         end
         
-        % Rysuj węzły
+        % Rysuj węzły (ograniczenie dla czytelności)
         for j = 1:numNodes
-            if numNodes <= 10 || j <= 5 || j > numNodes-5 % Ograniczenie dla czytelności
+            if numNodes <= 10 || j <= 5 || j > numNodes-5
                 circle = viscircles([x_positions(i), y_positions(j)], nodeRadius, ...
                     'Color', colors(i,:), 'LineWidth', 2);
             elseif j == 6 && numNodes > 10
@@ -123,27 +145,27 @@ try
             end
         end
         
-        % Etykiety warstw - POPRAWIONE KOLORY
+        % ETYKIETY warstw
         text(x_positions(i), maxNodes/3 + 1, layerNames{i}, ...
             'HorizontalAlignment', 'center', 'FontSize', 11, ...
             'FontWeight', 'bold', 'BackgroundColor', 'white', ...
             'EdgeColor', 'black', 'Margin', 3);
     end
     
-    % Połączenia między warstwami (reprezentacyjne)
+    % POŁĄCZENIA między warstwami (reprezentacyjne)
     for i = 1:length(layers)-1
         line([x_positions(i)+nodeRadius, x_positions(i+1)-nodeRadius], ...
             [0, 0], 'Color', 'black', 'LineWidth', 1, 'LineStyle', '--');
     end
     
-    % Dodaj informacje o parametrach treningu - POPRAWIONE KOLORY
+    % INFORMACJE o parametrach treningu
     if isfield(results, 'hyperparams')
         hp = results.hyperparams;
         infoText = sprintf('Training Function: %s\nEpochs: %d\nLearning Rate: %.1e\nGoal: %.1e', ...
             hp.trainFcn, hp.epochs, hp.lr, hp.goal);
         
         text(1, -maxNodes/3 - 1, infoText, 'FontSize', 9, ...
-            'BackgroundColor', [1, 1, 0.8], 'EdgeColor', 'black', 'Margin', 5); % ZMIENIONE: RGB zamiast 'lightyellow'
+            'BackgroundColor', [1, 1, 0.8], 'EdgeColor', 'black', 'Margin', 5);
     end
     
     xlim([0.5, length(layers) + 0.5]);
@@ -152,7 +174,7 @@ try
     title('PatternNet Architecture', 'FontSize', 14, 'FontWeight', 'bold');
     
 catch ME
-    % POPRAWIONY FALLBACK - tylko podstawowe kolory
+    % FALLBACK dla błędów struktury sieci
     if exist('hiddenSizes', 'var')
         hiddenInfo = mat2str(hiddenSizes);
     else
@@ -162,27 +184,30 @@ catch ME
     text(0.5, 0.5, sprintf('PatternNet Structure\n%s\nNodes: %s\nTest Accuracy: %.2f%%', ...
         results.modelType, hiddenInfo, results.testAccuracy*100), ...
         'HorizontalAlignment', 'center', 'FontSize', 12, ...
-        'BackgroundColor', [0.7, 0.9, 1], 'EdgeColor', 'black'); % ZMIENIONE: RGB zamiast 'lightblue'
+        'BackgroundColor', [0.7, 0.9, 1], 'EdgeColor', 'black');
     axis off;
     title('PatternNet Structure', 'FontSize', 14, 'FontWeight', 'bold');
 end
 end
 
 function plotCNNStructure(model, results)
-% PLOTCNNSTRUCTURE Wizualizacja struktury CNN - POPRAWIONE KOLORY
+% PLOTCNNSTRUCTURE Wizualizacja architektury CNN
+%
+% Rysuje sekwencyjny diagram warstw CNN z opisowymi blokami
+% dla każdego typu warstwy (Conv2D, ReLU, MaxPool, FC, etc.)
 
 try
-    % Pobierz warstwy CNN
+    % POBRANIE warstw CNN
     layers = model.Layers;
     
-    % Przygotuj informacje o warstwach
+    % PRZYGOTOWANIE informacji o warstwach
     layerInfo = {};
     yPos = length(layers);
     
     for i = 1:length(layers)
         layer = layers(i);
         
-        % Różne typy warstw - POPRAWIONE KOLORY (RGB arrays)
+        % RÓŻNE TYPY warstw z RGB kolorami
         switch class(layer)
             case 'nnet.cnn.layer.ImageInputLayer'
                 info = sprintf('Input: %dx%dx%d', layer.InputSize(1), layer.InputSize(2), layer.InputSize(3));
@@ -221,16 +246,16 @@ try
                 color = [0.5, 0.5, 0.5];
         end
         
-        % Rysuj prostokąt warstwy
+        % RYSOWANIE prostokąta warstwy
         rect = rectangle('Position', [1, yPos-0.4, 8, 0.8], ...
             'FaceColor', color, 'EdgeColor', 'black', 'LineWidth', 1.5);
         
-        % Tekst opisu warstwy
+        % TEKST opisu warstwy
         text(5, yPos, sprintf('%d. %s', i, info), ...
             'HorizontalAlignment', 'center', 'FontSize', 10, ...
             'FontWeight', 'bold', 'Color', 'white');
         
-        % Strzałka do następnej warstwy
+        % STRZAŁKA do następnej warstwy
         if i < length(layers)
             arrow([5, yPos-0.5], [5, yPos-1.5], 'Color', 'black', 'LineWidth', 2);
         end
@@ -238,14 +263,14 @@ try
         yPos = yPos - 1;
     end
     
-    % Dodaj informacje o hiperparametrach - POPRAWIONE KOLORY
+    % INFORMACJE o hiperparametrach CNN
     if isfield(results, 'hyperparams')
         hp = results.hyperparams;
         infoText = sprintf('Learning Rate: %.1e\nEpochs: %d\nBatch Size: %d\nDropout: %.2f', ...
             hp.lr, hp.epochs, hp.miniBatchSize, hp.dropoutRate);
         
         text(10.5, length(layers)/2, infoText, 'FontSize', 9, ...
-            'BackgroundColor', [1, 1, 0.8], 'EdgeColor', 'black', 'Margin', 5); % ZMIENIONE: RGB zamiast 'lightyellow'
+            'BackgroundColor', [1, 1, 0.8], 'EdgeColor', 'black', 'Margin', 5);
     end
     
     xlim([0, 12]);
@@ -254,26 +279,29 @@ try
     title('CNN Architecture', 'FontSize', 14, 'FontWeight', 'bold');
     
 catch ME
-    % POPRAWIONY FALLBACK
+    % FALLBACK dla błędów struktury CNN
     text(0.5, 0.5, sprintf('CNN Structure\n%d layers\nTest Accuracy: %.2f%%', ...
         length(model.Layers), results.testAccuracy*100), ...
         'HorizontalAlignment', 'center', 'FontSize', 12, ...
-        'BackgroundColor', [0.7, 1, 0.7], 'EdgeColor', 'black'); % ZMIENIONE: RGB zamiast 'lightgreen'
+        'BackgroundColor', [0.7, 1, 0.7], 'EdgeColor', 'black');
     axis off;
     title('CNN Structure', 'FontSize', 14, 'FontWeight', 'bold');
 end
 end
 
 function plotTrainingConvergence(model, results, modelType)
-% PLOTTRAININGCONVERGENCE Krzywe konwergencji treningu
+% PLOTTRAININGCONVERGENCE Krzywe konwergencji procesu trenowania
+%
+% Wizualizuje ewolucję metryk treningu w czasie (loss, accuracy, gradient).
+% Dla PatternNet używa trainRecord, dla CNN symuluje realistyczne krzywe.
 
 try
     if strcmp(modelType, 'patternnet')
-        % PatternNet - użyj informacji z treningu jeśli dostępne
+        % PATTERNNET - użyj danych z trainRecord
         if isfield(model, 'trainRecord') && ~isempty(model.trainRecord)
             tr = model.trainRecord;
             
-            % Wykresy performance i gradient
+            % WYKRESY performance i gradient na dwóch osiach Y
             yyaxis left;
             semilogy(tr.epoch, tr.perf, 'b-', 'LineWidth', 2, 'DisplayName', 'Training Performance');
             ylabel('Performance (MSE)', 'Color', 'blue');
@@ -287,11 +315,10 @@ try
             xlabel('Epoch');
             title('Training Convergence', 'FontSize', 14, 'FontWeight', 'bold');
             
-            % POPRAWKA: Zmień na prawidłową wartość
-            legend('Location', 'northeast'); % ZMIENIONE z 'best'
+            legend('Location', 'northeast');
             grid on;
             
-            % Dodaj informacje o zatrzymaniu
+            % INFORMACJE o zatrzymaniu treningu
             if isfield(tr, 'stop')
                 text(0.7, 0.95, sprintf('Stopped: %s\nEpochs: %d\nFinal Performance: %.2e', ...
                     tr.stop, length(tr.epoch), tr.perf(end)), ...
@@ -300,25 +327,28 @@ try
             end
             
         else
-            % Symuluj krzywą konwergencji
+            % SYMULACJA gdy brak danych treningu
             plotSimulatedConvergence(results, 'PatternNet');
         end
         
     elseif strcmp(modelType, 'cnn')
-        % CNN - symuluj lub użyj danych treningu jeśli dostępne
+        % CNN - symulacja krzywych treningu
         plotSimulatedConvergence(results, 'CNN');
     end
     
 catch ME
-    % Fallback
+    % FALLBACK dla wszystkich błędów
     plotSimulatedConvergence(results, modelType);
 end
 end
 
 function plotSimulatedConvergence(results, modelTypeStr)
-% PLOTSIMULATEDCONVERGENCE Symulowana krzywa konwergencji na podstawie wyników
+% PLOTSIMULATEDCONVERGENCE Symulacja realistycznych krzywych treningu
+%
+% Generuje symulowane krzywe loss i accuracy na podstawie finalnych wyników.
+% Uwzględnia typowy spadek eksponencjalny z plateau i realistyczny szum.
 
-% Symuluj realistyczną krzywą treningu
+% PARAMETRY symulacji na podstawie hiperparametrów
 if isfield(results, 'hyperparams') && isfield(results.hyperparams, 'epochs')
     maxEpochs = results.hyperparams.epochs;
 else
@@ -327,27 +357,27 @@ end
 
 epochs = 1:maxEpochs;
 
-% Symuluj loss na podstawie finalnej accuracy
+% SYMULACJA loss na podstawie finalnej accuracy
 finalAcc = results.testAccuracy;
 initialLoss = 1.6; % Wysoki początkowy loss dla klasyfikacji 5-klasowej
 
-% Krzywa spadku loss (eksponencjalna z plateau)
+% KRZYWA spadku loss (eksponencjalna z plateau)
 targetLoss = -log(finalAcc); % Docelowy loss na podstawie accuracy
 lossDecay = 0.15;
 trainingLoss = targetLoss + (initialLoss - targetLoss) * exp(-lossDecay * epochs);
 
-% Dodaj realny szum
+% DODANIE realistycznego szumu
 noise = 0.05 * randn(size(epochs));
 trainingLoss = trainingLoss + noise;
 
-% Accuracy na podstawie loss
+% ACCURACY na podstawie loss
 trainingAcc = exp(-trainingLoss) * 100;
 
-% Validation loss (nieco wyższy, więcej szumu)
+% VALIDATION loss (nieco wyższy, więcej szumu)
 valLoss = trainingLoss * 1.1 + 0.02 * randn(size(epochs));
 valAcc = exp(-valLoss) * 100;
 
-% Plots
+% WYKRESY na dwóch osiach Y
 yyaxis left;
 plot(epochs, trainingLoss, 'b-', 'LineWidth', 2, 'DisplayName', 'Training Loss');
 hold on;
@@ -362,22 +392,21 @@ ylabel('Accuracy (%)', 'Color', 'red');
 xlabel('Epoch');
 title(sprintf('%s Training Convergence (Simulated)', modelTypeStr), 'FontSize', 14, 'FontWeight', 'bold');
 
-% POPRAWKA: Zmień 'center right' na 'eastoutside'
 legend('Location', 'eastoutside');
 grid on;
 
-% Informacje o treningu
+% INFORMACJE o treningu
 text(0.05, 0.95, sprintf('Final Test Accuracy: %.2f%%\nTraining Time: %.1fs\nConverged in ~%d epochs', ...
     finalAcc*100, results.trainTime, maxEpochs), ...
     'Units', 'normalized', 'FontSize', 9, ...
     'BackgroundColor', 'white', 'EdgeColor', 'black', 'Margin', 3);
 end
 
-% Helper function for arrows (jeśli nie istnieje)
+% FUNKCJA POMOCNICZA dla rysowania strzałek
 function arrow(start, stop, varargin)
-% ARROW Simple arrow drawing
+% ARROW Prosta funkcja rysowania strzałek
 try
-    % Używaj quiver jeśli dostępne
+    % Użyj quiver jeśli dostępne
     quiver(start(1), start(2), stop(1)-start(1), stop(2)-start(2), 0, varargin{:});
 catch
     % Fallback - prosta linia
@@ -386,21 +415,24 @@ end
 end
 
 function plotSimpleConfusionMatrix(results, titleStr)
-% PLOTSIMPLECONFUSIONMATRIX Confusion matrix wzorowana na screenshocie
+% PLOTSIMPLECONFUSIONMATRIX Wrapper dla confusion matrix
+%
+% Używa tej samej funkcji co w compareModels dla spójności stylu
 
 C = confusionmat(results.trueLabels, results.predictions);
-
-% Użyj tej samej funkcji co w compareModels
 plotConfusionMatrix(C, titleStr);
 end
 
 function plotConfusionMatrix(C, titleStr)
-% PLOTCONFUSIONMATRIX Profesjonalna confusion matrix z confusionchart
+% PLOTCONFUSIONMATRIX Profesjonalna confusion matrix z prawdziwymi nazwami palców
+%
+% Generuje confusion matrix używając confusionchart (MATLAB R2018b+)
+% lub fallback imagesc z pełną kontrolą formatowania
 
-% Oblicz accuracy
+% OBLICZ accuracy z macierzy pomyłek
 acc = trace(C) / sum(C(:)) * 100;
 
-% PRAWDZIWE NAZWY PALCÓW zamiast "Class 1", "Class 2"
+% PRAWDZIWE NAZWY PALCÓW zamiast numerów klas
 [m, n] = size(C);
 classLabels = cell(1, m);
 fingerNames = {'Kciuk', 'Wskazujący', 'Środkowy', 'Serdeczny', 'Mały'};
@@ -414,84 +446,83 @@ for i = 1:m
 end
 
 try
-    % UŻYJ CONFUSIONCHART - profesjonalny wygląd jak w poprzednim projekcie
+    % PREFEROWANE: confusionchart dla profesjonalnego wyglądu
     cm = confusionchart(C, classLabels);
     cm.Title = sprintf('%s - Accuracy: %.1f%%', titleStr, acc);
     cm.ColumnSummary = 'column-normalized';
     cm.RowSummary = 'row-normalized';
     
-    % Dostosowanie kolorystyki
+    % KOLORYSTYKA Parula dla lepszego kontrastu
     colormap(parula);
     
 catch
-    % FALLBACK - zwykła heatmapa z imagesc
+    % FALLBACK: klasyczna heatmapa z imagesc
     imagesc(C);
     
-    % CZYTELNA COLORMAP
-    colormap(gca, flipud(gray)); % Ciemny = wysokie wartości, jasny = niskie
+    % CZYTELNA COLORMAP (ciemny = wysokie, jasny = niskie)
+    colormap(gca, flipud(gray));
     colorbar;
     
-    % Ustawienia osi
+    % USTAWIENIA osi
     set(gca, 'XTick', 1:n, 'YTick', 1:m);
     set(gca, 'XTickLabel', classLabels, 'YTickLabel', classLabels);
     set(gca, 'FontSize', 11, 'FontWeight', 'bold');
     
-    % Etykiety i tytuł
+    % ETYKIETY i tytuł
     xlabel('Predicted Class', 'FontSize', 12, 'FontWeight', 'bold');
     ylabel('True Class', 'FontSize', 12, 'FontWeight', 'bold');
-    
-    % ACCURACY W TYTULE
     title(sprintf('%s - Accuracy: %.1f%%', titleStr, acc), ...
         'FontSize', 14, 'FontWeight', 'bold');
     
-    % Dodaj TYLKO LICZBY w środku każdej komórki
+    % WARTOŚCI NUMERYCZNE w komórkach macierzy
     for i = 1:m
         for j = 1:n
-            % Automatyczny wybór koloru tekstu
+            % Automatyczny wybór koloru tekstu dla kontrastu
             if C(i,j) > max(C(:))/2
                 textColor = 'white';
             else
                 textColor = 'black';
             end
             
-            % TYLKO LICZBA - bez procentów
+            % TYLKO liczba bez procentów
             text(j, i, sprintf('%d', C(i,j)), ...
                 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
                 'FontSize', 14, 'FontWeight', 'bold', 'Color', textColor);
         end
     end
     
-    % Ustaw limity osi
+    % DOPASOWANIE osi
     xlim([0.5, n+0.5]);
     ylim([0.5, m+0.5]);
-    
-    % Standardowe ustawienia osi
     axis tight;
 end
 end
 
 function plotClassicMetrics(results, titleStr)
-% PLOTCLASSICMETRICS Klasyczne metryki: Precision, Recall, F1, Accuracy
+% PLOTCLASSICMETRICS Klasyczne metryki klasyfikacji
+%
+% Wyświetla Precision, Recall, F1-Score i Accuracy w formie
+% czytelnego wykresu słupkowego z wartościami na słupkach
 
 C = confusionmat(results.trueLabels, results.predictions);
 
-% Oblicz metryki
+% OBLICZ metryki klasyfikacji
 precision = diag(C) ./ sum(C, 1)';
 recall = diag(C) ./ sum(C, 2);
 f1score = 2 * (precision .* recall) ./ (precision + recall);
 accuracy = trace(C) / sum(C(:));
 
-% Usuń NaN
+% USUŃ wartości NaN (w przypadku pustych klas)
 precision(isnan(precision)) = 0;
 recall(isnan(recall)) = 0;
 f1score(isnan(f1score)) = 0;
 
-% Macro-averaged metrics
+% MACRO-AVERAGED metryki
 macro_precision = mean(precision);
 macro_recall = mean(recall);
 macro_f1 = mean(f1score);
 
-% Wykres słupkowy
+% WYKRES słupkowy z kolorami RGB
 metrics = [accuracy, macro_precision, macro_recall, macro_f1];
 labels = {'Accuracy', 'Precision', 'Recall', 'F1-Score'};
 colors = [0.2, 0.6, 0.8; 0.8, 0.4, 0.2; 0.4, 0.8, 0.4; 0.8, 0.6, 0.4];
@@ -508,14 +539,14 @@ ylabel('Score', 'FontSize', 11, 'FontWeight', 'bold');
 ylim([0, 1]);
 grid on;
 
-% POPRAWIONE - wartości nad słupkami z większym odstępem
+% WARTOŚCI na słupkach (w środku)
 for i = 1:length(metrics)
     text(i, metrics(i)/2, sprintf('%.3f', metrics(i)), ...
         'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
         'FontWeight', 'bold', 'FontSize', 11, 'Color', 'white');
 end
 
-% POPRAWIONE - info box w dolnym obszarze
+% INFO BOX z podstawowymi informacjami
 text(2.5, 0.12, sprintf('Model: %s\nSamples: %d\nClasses: %d', ...
     upper(results.modelType), length(results.trueLabels), length(unique(results.trueLabels))), ...
     'HorizontalAlignment', 'center', 'FontSize', 9, 'BackgroundColor', 'white', ...
@@ -523,23 +554,25 @@ text(2.5, 0.12, sprintf('Model: %s\nSamples: %d\nClasses: %d', ...
 end
 
 function plotValTestComparison(results, titleStr)
-% PLOTVALTESTCOMPARISON Porównanie validation vs test accuracy - POPRAWIONE KOLORY
+% PLOTVALTESTCOMPARISON Porównanie validation vs test accuracy
+%
+% Wizualizuje różnicę między accuracy walidacyjną a testową
+% z automatyczną oceną jakości generalizacji modelu
 
-% POPRAWKA: Użyj rzeczywistego validation accuracy z wyników optymalizacji
+% POBRANIE validation accuracy z wyników optymalizacji
 if isfield(results, 'valAccuracy')
     valAcc = results.valAccuracy * 100;
 elseif isfield(results, 'validationAccuracy')
     valAcc = results.validationAccuracy * 100;
 else
-    % BŁĄD - nie ma validation accuracy w results!
-    % To znaczy że trzeba go przekazać z MLPipeline
+    % BRAK validation accuracy - użyj test accuracy jako fallback
     fprintf('⚠️  No validation accuracy found in results - using test accuracy\n');
     valAcc = results.testAccuracy * 100;
 end
 
 testAcc = results.testAccuracy * 100;
 
-% Bar chart
+% WYKRES słupkowy porównawczy
 bar_data = [valAcc, testAcc];
 bar_labels = {'Validation', 'Test'};
 colors = [0.3, 0.6, 0.9; 0.9, 0.4, 0.2];
@@ -555,56 +588,57 @@ ylabel('Accuracy (%)', 'FontSize', 11, 'FontWeight', 'bold');
 ylim([0, 100]);
 grid on;
 
-% POPRAWIONE - wartości W ŚRODKU słupków
+% WARTOŚCI w środku słupków
 for i = 1:length(bar_data)
     text(i, bar_data(i)/2, sprintf('%.1f%%', bar_data(i)), ...
         'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
         'FontWeight', 'bold', 'FontSize', 12, 'Color', 'white');
 end
 
-% POPRAWIONE - obliczanie gap ale BEZ opisów o przeuczeniu
+% OBLICZENIE i wizualizacja gap
 overfitting = valAcc - testAcc;
 
-% POPRAWIONE KOLORY - używaj tylko RGB arrays zamiast nazw kolorów
+% KOLORY RGB na podstawie wielkości gap
 if overfitting > 15
-    colorRGB = [1, 0, 0]; % czerwony
+    colorRGB = [1, 0, 0]; % Czerwony - duży overfitting
 elseif overfitting > 8
-    colorRGB = [1, 1, 0]; % żółty
+    colorRGB = [1, 1, 0]; % Żółty - umiarkowany overfitting
 elseif overfitting >= -5 && overfitting <= 8
-    colorRGB = [0, 1, 0]; % zielony
+    colorRGB = [0, 1, 0]; % Zielony - dobra generalizacja
 else
-    colorRGB = [0, 0, 1]; % niebieski
+    colorRGB = [0, 0, 1]; % Niebieski - nietypowa sytuacja
 end
 
-% TYLKO GAP - bez opisów, z RGB kolorami
+% WYŚWIETLENIE gap bez dodatkowych opisów
 text(1.5, 75, sprintf('Gap: %.1f%%', overfitting), ...
     'HorizontalAlignment', 'center', 'FontSize', 12, 'Color', colorRGB, ...
     'FontWeight', 'bold', 'BackgroundColor', 'white', 'EdgeColor', colorRGB, ...
     'Margin', 3);
-
-% USUNIĘTE - żadnych dodatkowych opisów o generalizacji
 end
 
 function plotPerClassMetrics(results, titleStr)
-% PLOTPERCLASSMETRICS F1-Score dla każdej klasy - POPRAWIONE KOLORY
+% PLOTPERCLASSMETRICS F1-Score dla każdej klasy palca
+%
+% Wizualizuje wydajność klasyfikacji dla poszczególnych palców
+% z nazwami zamiast numerów klas oraz średnią linią odniesienia
 
 C = confusionmat(results.trueLabels, results.predictions);
 numClasses = size(C, 1);
 
-% Oblicz F1 dla każdej klasy
+% OBLICZ F1-Score dla każdej klasy
 precision = diag(C) ./ sum(C, 1)';
 recall = diag(C) ./ sum(C, 2);
 f1score = 2 * (precision .* recall) ./ (precision + recall);
 
-% Usuń NaN
+% USUŃ wartości NaN
 precision(isnan(precision)) = 0;
 recall(isnan(recall)) = 0;
 f1score(isnan(f1score)) = 0;
 
-% Bar chart
+% WYKRES słupkowy F1-Score
 b = bar(f1score, 'FaceColor', [0.4, 0.7, 0.9]);
 
-% POPRAWIONE - nazwy palców zamiast numerów klas
+% NAZWY palców zamiast numerów klas
 fingerNames = {'Kciuk', 'Wskazujący', 'Środkowy', 'Serdeczny', 'Mały'};
 classLabels = cell(1, numClasses);
 for i = 1:numClasses
@@ -615,10 +649,10 @@ for i = 1:numClasses
     end
 end
 
-% Ustaw etykiety osi X
+% USTAWIENIA osi
 set(gca, 'XTick', 1:numClasses);
 set(gca, 'XTickLabel', classLabels);
-xtickangle(45); % Obróć etykiety dla lepszej czytelności
+xtickangle(45); % Obrót etykiet dla czytelności
 
 xlabel('Palec', 'FontSize', 11, 'FontWeight', 'bold');
 ylabel('F1-Score', 'FontSize', 11, 'FontWeight', 'bold');
@@ -626,23 +660,23 @@ title(titleStr, 'FontSize', 12, 'FontWeight', 'bold');
 ylim([0, 1]);
 grid on;
 
-% POPRAWIONE - wartości W ŚRODKU słupków zamiast nad nimi
+% WARTOŚCI w środku słupków
 for i = 1:numClasses
     text(i, f1score(i)/2, sprintf('%.2f', f1score(i)), ...
         'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
         'FontWeight', 'bold', 'FontSize', 10, 'Color', 'white');
 end
 
-% POPRAWIONE - linia średniej z lepszą pozycją tekstu
+% LINIA średniej F1-Score
 mean_f1 = mean(f1score);
 yline(mean_f1, 'r--', 'LineWidth', 2);
 
-% POPRAWIONE KOLORY - używaj tylko RGB arrays
+% TEKST z wartością średniej
 text(numClasses * 0.75, 0.9, sprintf('Mean F1: %.2f', mean_f1), ...
     'FontSize', 10, 'Color', [1, 0, 0], 'FontWeight', 'bold', ...
-    'BackgroundColor', 'white', 'EdgeColor', [1, 0, 0], 'Margin', 2); % ZMIENIONE: RGB zamiast 'red'
+    'BackgroundColor', 'white', 'EdgeColor', [1, 0, 0], 'Margin', 2);
 
-% Color bars based on performance
+% KOLOROWANIE słupków na podstawie wydajności
 cmap = colormap(hot(100));
 for i = 1:numClasses
     color_idx = max(1, min(100, round(f1score(i) * 100)));

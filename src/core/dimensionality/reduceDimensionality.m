@@ -1,5 +1,27 @@
 function [reducedFeatures, info] = reduceDimensionality(features, method, params, labels)
-% REDUCEDIMENSIONALITY Reduces feature dimensionality using specified method - BEZ LDA
+% REDUCEDIMENSIONALITY Redukuje wymiarowość cech używając wybranej metody
+%
+% Funkcja implementuje algorytmy redukcji wymiarowości dla cech odcisków palców,
+% zmniejszając liczbę wymiarów przy zachowaniu najważniejszych informacji.
+% Obsługuje metody nadzorowane (MDA) i nienadzorowane (PCA) z automatycznym
+% doborem parametrów i raportowaniem jakości redukcji.
+%
+% Parametry wejściowe:
+%   features - macierz cech [samples × features] do redukcji
+%   method - nazwa metody ('PCA', 'MDA')
+%   params - struktura parametrów specyficznych dla metody
+%   labels - etykiety klas [samples × 1] (wymagane dla MDA, opcjonalne dla PCA)
+%
+% Parametry wyjściowe:
+%   reducedFeatures - macierz zredukowanych cech [samples × reduced_dims]
+%   info - struktura z informacjami o redukcji (method, explained variance, etc.)
+%
+% Dostępne metody:
+%   PCA: Principal Component Analysis - analiza składowych głównych
+%   MDA: Multiple Discriminant Analysis - analiza dyskryminacyjna
+%
+% Przykład użycia:
+%   [redFeats, info] = reduceDimensionality(features, 'PCA', params);
 
 if nargin < 4
     labels = [];
@@ -21,23 +43,25 @@ switch lower(method)
         error('Unknown dimensionality reduction method: %s. Available: PCA, MDA', method);
 end
 
-% Podsumowanie (wspólne dla wszystkich metod)
+% Raportowanie wyników (wspólne dla wszystkich metod)
 fprintf('✅ %s completed: %d → %d features\n', upper(method), ...
     size(features, 2), size(reducedFeatures, 2));
 
+% Wyświetlenie informacji o zachowanej wariancji jeśli dostępne
 if isfield(info, 'varianceExplained') && ~isempty(info.varianceExplained)
     fprintf('   (%.1f%% variance preserved)\n', info.varianceExplained * 100);
 elseif isfield(info, 'totalVarianceExplained') && ~isempty(info.totalVarianceExplained)
     fprintf('   (%.1f%% variance preserved)\n', info.totalVarianceExplained);
 end
 
+% Szczegółowe podsumowanie procesu redukcji
 fprintf('\n📊 Dimensionality Reduction Summary:\n');
 fprintf('Method: %s\n', upper(method));
 fprintf('Original dimensions: %d\n', size(features, 2));
 fprintf('Reduced dimensions: %d\n', size(reducedFeatures, 2));
 fprintf('Reduction ratio: %.1f%%\n', (1 - size(reducedFeatures, 2)/size(features, 2)) * 100);
 
-% Wbudowana analiza
+% Analiza specyficzna dla metody
 switch lower(method)
     case 'mda'
         if isfield(info, 'separabilityScore')
@@ -56,74 +80,80 @@ switch lower(method)
                 mat2str(info.explained(1:topComponents)', 1));
         end
 end
-
 end
 
-%% SUBFUNCTIONS - USUŃ LDA FUNCTIONS
+%% FUNKCJE IMPLEMENTUJĄCE POSZCZEGÓLNE METODY
 
 function [reducedFeatures, info] = applyPCA(features, params)
-% APPLYPCA Applies Principal Component Analysis - BEZ ZMIAN
+% APPLYPCA Implementuje Principal Component Analysis
+%
+% Metoda nienadzorowana znajdująca kierunki maksymalnej wariancji w danych.
+% Redukuje wymiarowość poprzez projekcję na składowe główne zachowujące
+% zadany procent całkowitej wariancji.
 
-% Domyślne parametry
+% Ustawienia domyślne dla PCA
 if ~isfield(params, 'varianceThreshold')
-    params.varianceThreshold = 0.95; % 95% wariancji
+    params.varianceThreshold = 0.95; % Zachowaj 95% wariancji
 end
 
 if ~isfield(params, 'maxComponents')
-    params.maxComponents = min(size(features, 1) - 1, 15); % Max 15 komponentów
+    params.maxComponents = min(size(features, 1) - 1, 15); % Maksymalnie 15 komponentów
 end
 
 fprintf('   Target variance preserved: %.1f%%\n', params.varianceThreshold * 100);
 
-% PCA z MATLAB
+% Wykonanie PCA używając wbudowanej funkcji MATLAB
 [coeff, score, latent, ~, explained] = pca(features);
 
-% Oblicz kumulatywną wariancję
+% Obliczenie kumulatywnej wariancji wyjaśnionej
 cumulativeVariance = cumsum(explained) / 100;
 
 % Znajdź liczbę komponentów dla żądanej wariancji
 numComponents = find(cumulativeVariance >= params.varianceThreshold, 1, 'first');
 
-% Ogranicz do maksymalnej liczby komponentów
+% Ograniczenie do maksymalnej liczby komponentów
 numComponents = min(numComponents, params.maxComponents);
 
-% Jeśli nie znaleziono, użyj maksymalnej liczby
+% Fallback jeśli nie znaleziono odpowiedniej liczby komponentów
 if isempty(numComponents)
     numComponents = params.maxComponents;
 end
 
-% Ekstraktuj pierwsze numComponents komponentów
+% Projekcja na wybrane składowe główne
 reducedFeatures = score(:, 1:numComponents);
 
-% Informacje o redukcji
+% Tworzenie struktury informacyjnej
 info = struct();
 info.method = 'PCA';
 info.numComponents = numComponents;
-info.coefficients = coeff(:, 1:numComponents);
-info.eigenvalues = latent(1:numComponents);
-info.explained = explained(1:numComponents);
+info.coefficients = coeff(:, 1:numComponents);    % Wektory własne
+info.eigenvalues = latent(1:numComponents);       % Wartości własne
+info.explained = explained(1:numComponents);      % Wyjaśniona wariancja per komponent
 info.varianceExplained = cumulativeVariance(numComponents);
 info.totalVarianceExplained = sum(explained(1:numComponents));
 info.originalDims = size(features, 2);
 info.reducedDims = numComponents;
-
 end
 
 function [reducedFeatures, info] = applyMDA(features, labels, params)
-% APPLYMDA Applies Multiple Discriminant Analysis (enhanced LDA) - BEZ ZMIAN
+% APPLYMDA Implementuje Multiple Discriminant Analysis (Enhanced LDA)
+%
+% Metoda nadzorowana maksymalizująca separowalność między klasami przy
+% minimalizacji wariancji wewnątrz klas. Znajduje kierunki optymalnej
+% dyskryminacji między klasami odcisków palców.
 
-% Domyślne parametry
+% Ustawienia domyślne dla MDA
 if ~isfield(params, 'maxComponents')
-    params.maxComponents = 4;
+    params.maxComponents = 4; % Maksymalnie 4 komponenty dyskryminujące
 end
 
 fprintf('   Target components: %d\n', params.maxComponents);
 
-% MDA - Enhanced LDA with better class separation
+% Obliczenie rzeczywistej liczby możliwych komponentów
 numClasses = length(unique(labels));
 actualComponents = min(numClasses - 1, params.maxComponents);
 
-% Oblicz średnie per klasa
+% Przygotowanie danych per klasa
 classLabels = unique(labels);
 classFeatures = cell(length(classLabels), 1);
 classMeans = zeros(length(classLabels), size(features, 2));
@@ -134,7 +164,7 @@ for i = 1:length(classLabels)
     classMeans(i, :) = mean(classFeatures{i}, 1);
 end
 
-% Oblicz between-class scatter matrix
+% Obliczenie macierzy rozrzutu między klasami (between-class scatter)
 overallMean = mean(features, 1);
 Sb = zeros(size(features, 2));
 
@@ -144,7 +174,7 @@ for i = 1:length(classLabels)
     Sb = Sb + classSize * (meanDiff' * meanDiff);
 end
 
-% Oblicz within-class scatter matrix
+% Obliczenie macierzy rozrzutu wewnątrz klas (within-class scatter)
 Sw = zeros(size(features, 2));
 
 for i = 1:length(classLabels)
@@ -157,52 +187,54 @@ for i = 1:length(classLabels)
     end
 end
 
-% Regularyzacja jeśli potrzeba
+% Regularyzacja macierzy Sw jeśli singular
 if rank(Sw) < size(Sw, 1)
     fprintf('   Adding regularization...\n');
-    Sw = Sw + 1e-6 * eye(size(Sw));
+    Sw = Sw + 1e-6 * eye(size(Sw)); % Regularyzacja Ridge
 end
 
-% Rozwiąż problem eigenvalue
+% Rozwiązanie uogólnionego problemu wartości własnych
 try
     [eigenvectors, eigenvalues] = eig(Sb, Sw);
     [~, sortIdx] = sort(diag(eigenvalues), 'descend');
     
-    % Wybierz najlepsze komponenty
+    % Wybór najlepszych komponentów dyskryminujących
     selectedVectors = eigenvectors(:, sortIdx(1:actualComponents));
     eigenVals = diag(eigenvalues);
     eigenVals = eigenVals(sortIdx(1:actualComponents));
     
-    % Transform features
+    % Transformacja cech do przestrzeni dyskryminującej
     reducedFeatures = features * selectedVectors;
     
 catch ME
     fprintf('   MDA eigenvalue solution failed: %s\n', ME.message);
     fprintf('   Fallback to PCA...\n');
     
-    % FALLBACK: PCA zamiast LDA
+    % Fallback: użyj PCA jeśli MDA nie działa
     params_fallback = struct('varianceThreshold', 0.90, 'maxComponents', actualComponents);
     [reducedFeatures, info] = applyPCA(features, params_fallback);
     info.method = 'MDA (PCA fallback)';
     return;
 end
 
-% Informacje o redukcji
+% Tworzenie struktury informacyjnej
 info = struct();
 info.method = 'MDA';
 info.numComponents = actualComponents;
-info.transformMatrix = selectedVectors;
-info.eigenValues = eigenVals;
+info.transformMatrix = selectedVectors;           % Macierz transformacji
+info.eigenValues = eigenVals;                    % Wartości własne
 info.originalDims = size(features, 2);
 info.reducedDims = actualComponents;
 
-% Oblicz separowalność
+% Obliczenie miary separowalności klas
 info.separabilityScore = calculateClassSeparability(reducedFeatures, labels);
-
 end
 
 function separabilityScore = calculateClassSeparability(projectedData, labels)
-% CALCULATECLASSSEPARABILITY Oblicz jak dobrze klasy są rozdzielone - BEZ ZMIAN
+% CALCULATECLASSSEPARABILITY Oblicza miarę separowalności klas w przestrzeni zredukowanej
+%
+% Funkcja oblicza stosunek wariancji między klasami do wariancji wewnątrz klas
+% jako miarę jakości separacji. Wyższe wartości oznaczają lepszą separowalność.
 
 try
     uniqueLabels = unique(labels);
@@ -213,7 +245,7 @@ try
         return;
     end
     
-    % Stosunek between-class do within-class variance
+    % Obliczenie składników separowalności
     betweenClassVar = 0;
     withinClassVar = 0;
     globalMean = mean(projectedData, 1);
@@ -229,30 +261,30 @@ try
         classMean = mean(classData, 1);
         classSize = sum(classMask);
         
-        % Between-class variance
+        % Wariancja między klasami (between-class variance)
         meanDiff = classMean - globalMean;
         betweenClassVar = betweenClassVar + classSize * sum(meanDiff.^2);
         
-        % Within-class variance
+        % Wariancja wewnątrz klasy (within-class variance)
         if classSize > 1
             classVar = sum(var(classData, 0, 1));
             withinClassVar = withinClassVar + classVar;
         end
     end
     
-    % Oblicz separability score
+    % Obliczenie separability score jako stosunku wariancji
     if withinClassVar > 1e-10
         separabilityScore = betweenClassVar / withinClassVar;
     else
-        separabilityScore = betweenClassVar; % Perfect separation
+        separabilityScore = betweenClassVar; % Idealna separacja
     end
     
-    % Sanitize output
+    % Sanityzacja wyniku
     if ~isfinite(separabilityScore) || separabilityScore < 0
         separabilityScore = 0;
     end
     
 catch ME
-    separabilityScore = 0;
+    separabilityScore = 0; % Fallback dla błędów
 end
 end

@@ -1,13 +1,23 @@
 function normalizedFeatures = normalizeFeatures(features, method, referenceStats)
 % NORMALIZEFEATURES Normalizuje wektory cech różnymi metodami
 %
-% Argumenty:
+% Funkcja implementuje różne metody normalizacji danych numerycznych
+% cech odcisków palców w celu zapewnienia stabilności treningu sieci
+% neuronowych i porównywalności między różnymi cechami.
+%
+% Parametry wejściowe:
 %   features - macierz cech [samples x features] lub wektor [1 x features]
 %   method - metoda normalizacji: 'minmax', 'zscore', 'robust', 'unit'
 %   referenceStats - (opcjonalne) statystyki referencyjne dla zbioru treningowego
 %
-% Output:
+% Dane wyjściowe:
 %   normalizedFeatures - znormalizowane cechy
+%
+% Dostępne metody:
+%   'minmax' - normalizacja do przedziału [0,1]
+%   'zscore' - standaryzacja (średnia=0, odchylenie=1)
+%   'robust' - odporna na outliers (mediana, MAD)
+%   'unit' - normalizacja do wektora jednostkowego
 
 if nargin < 2
     method = 'minmax'; % Domyślna metoda
@@ -17,9 +27,9 @@ if nargin < 3
     referenceStats = [];
 end
 
-% Sprawdź czy to wektor czy macierz
+% SPRAWDŹ czy to wektor czy macierz
 if isvector(features)
-    features = features(:)'; % Zapewnij wiersz
+    features = features(:)'; % Zapewnij format wiersza
     singleVector = true;
 else
     singleVector = false;
@@ -29,7 +39,7 @@ end
 
 switch lower(method)
     case 'minmax'
-        % Min-Max normalizacja do [0, 1]
+        % MIN-MAX normalizacja do zakresu [0, 1]
         if isempty(referenceStats)
             minVals = min(features, [], 1);
             maxVals = max(features, [], 1);
@@ -44,7 +54,7 @@ switch lower(method)
         normalizedFeatures = (features - minVals) ./ ranges;
         
     case 'zscore'
-        % Z-score normalizacja (średnia=0, std=1)
+        % Z-SCORE normalizacja (średnia=0, odchylenie standardowe=1)
         if isempty(referenceStats)
             meanVals = mean(features, 1);
             stdVals = std(features, 0, 1);
@@ -58,7 +68,7 @@ switch lower(method)
         normalizedFeatures = (features - meanVals) ./ stdVals;
         
     case 'robust'
-        % Robust normalizacja (mediana, MAD)
+        % ROBUST normalizacja (mediana, MAD - odporna na outliers)
         if isempty(referenceStats)
             medianVals = median(features, 1);
             madVals = mad(features, 1, 1); % Median Absolute Deviation
@@ -72,7 +82,7 @@ switch lower(method)
         normalizedFeatures = (features - medianVals) ./ madVals;
         
     case 'unit'
-        % Unit vector normalizacja (norma euklidesowa = 1)
+        % UNIT VECTOR normalizacja (norma euklidesowa = 1)
         norms = sqrt(sum(features.^2, 2));
         norms(norms == 0) = 1;
         
@@ -83,10 +93,10 @@ switch lower(method)
         normalizedFeatures = normalizeFeatures(features, 'zscore', referenceStats);
 end
 
-% Usuń NaN i Inf
+% USUŃ wartości NaN i Inf (zabezpieczenie)
 normalizedFeatures(~isfinite(normalizedFeatures)) = 0;
 
-% Przywróć oryginalny kształt jeśli to był wektor
+% PRZYWRÓĆ oryginalny kształt jeśli to był pojedynczy wektor
 if singleVector
     normalizedFeatures = normalizedFeatures(:)';
 end
@@ -94,23 +104,37 @@ end
 
 function stats = computeNormalizationStats(features, method)
 % COMPUTENORMALIZATIONSTATS Oblicza statystyki do normalizacji
-% Użyj tej funkcji na zbiorze treningowym
+%
+% Funkcja pomocnicza do obliczania statystyk normalizacyjnych na zbiorze
+% treningowym, które później mogą być zastosowane do zbioru testowego
+% w celu zachowania spójności normalizacji.
+%
+% Parametry wejściowe:
+%   features - macierz cech zbioru treningowego
+%   method - metoda normalizacji
+%
+% Dane wyjściowe:
+%   stats - struktura ze statystykami dla danej metody
 
 switch lower(method)
     case 'minmax'
+        % STATYSTYKI dla min-max normalizacji
         stats.minVals = min(features, [], 1);
         stats.maxVals = max(features, [], 1);
         
     case 'zscore'
+        % STATYSTYKI dla z-score normalizacji
         stats.meanVals = mean(features, 1);
         stats.stdVals = std(features, 0, 1);
         
     case 'robust'
+        % STATYSTYKI dla robust normalizacji
         stats.medianVals = median(features, 1);
         stats.madVals = mad(features, 1, 1);
         
     case 'unit'
-        stats = []; % Unit normalization nie wymaga statystyk
+        % UNIT normalization nie wymaga statystyk referencyjnych
+        stats = [];
         
     otherwise
         error('Unknown normalization method: %s', method);

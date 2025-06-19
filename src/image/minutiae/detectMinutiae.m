@@ -1,25 +1,40 @@
 function [minutiae, qualityMap] = detectMinutiae(skeletonImage, config, logFile)
-% DETECTMINUTIAE Wykrywa minucje - wersja oparta na oryginalnej ale ulepszona
+% DETECTMINUTIAE Wykrywa minucje w obrazie szkieletu odcisku palca - wersja ulepszona
 %
-% Argumenty:
-%   skeletonImage - obraz szkieletu linii papilarnych
-%   config - struktura konfiguracyjna
-%   logFile - plik logów (opcjonalny)
+% Funkcja implementuje zaawansowany algorytm detekcji minucji z wielopoziomową
+% walidacją i mechanizmami fallback. Wykrywa endings i bifurcations w szkielecie
+% linii papilarnych z kontrolą jakości i filtracją artefaktów.
 %
-% Output:
-%   minutiae - wykryte minucje [x, y, angle, type, quality]
-%   qualityMap - mapa jakości dla każdej minucji
+% Parametry wejściowe:
+%   skeletonImage - obraz szkieletu linii papilarnych (logical lub binarny)
+%   config - struktura konfiguracyjna z parametrami detekcji
+%   logFile - uchwyt do pliku logów (opcjonalny)
+%
+% Parametry wyjściowe:
+%   minutiae - macierz wykrytych minucji [x, y, angle, type, quality]
+%             gdzie: type=1 (ending), type=2 (bifurcation)
+%   qualityMap - mapa jakości minucji (macierz 2D)
+%
+% Algorytm:
+%   1. Detekcja kandydatów na minucje (analiza sąsiedztwa 3x3)
+%   2. Wielopoziomowa walidacja bifurcacji (geometria, topologia, stabilność)
+%   3. Obliczanie orientacji i jakości dla każdej minucji
+%   4. Filtracja przestrzenna i jakościowa z mechanizmami fallback
+%
+% Przykład użycia:
+%   [minutiae, qualityMap] = detectMinutiae(skeletonImg, config, logFile);
 
 if nargin < 3, logFile = []; end
 
 try
     logInfo('Starting minutiae detection...', logFile);
     
-    % Sprawdź format wejściowy
+    % Konwersja do formatu logicznego jeśli potrzebna
     if ~islogical(skeletonImage)
         skeletonImage = skeletonImage > 0;
     end
     
+    % Sprawdzenie czy obraz nie jest pusty
     if isempty(skeletonImage) || sum(skeletonImage(:)) == 0
         logWarning('Empty skeleton image', logFile);
         minutiae = zeros(0, 5);
@@ -32,24 +47,27 @@ try
     
     logInfo(sprintf('Analyzing skeleton image %dx%d...', rows, cols), logFile);
     
-    % DETEKCJA punktów (uproszczona wersja oryginalnej)
+    % ETAP 1: DETEKCJA KANDYDATÓW NA MINUCJE
+    % Identyfikuje potencjalne endings i bifurcations na podstawie liczby sąsiadów
     [endpoints, bifurcations] = detectMinutiaePoints(skeletonImage);
     
-    % OBLICZ orientacje
+    % ETAP 2: OBLICZANIE ORIENTACJI
+    % Szacuje kierunek linii papilarnych w okolicy każdej minucji
     endpointOrientations = computeMinutiaeOrientations(skeletonImage, endpoints);
     bifurcationOrientations = computeMinutiaeOrientations(skeletonImage, bifurcations);
     
-    % POŁĄCZ w format [x, y, angle, type, quality]
+    % ETAP 3: FORMATOWANIE DANYCH MINUCJI
+    % Łączy współrzędne, orientacje, typy i jakość w jednolitą strukturę
     minutiae = [];
     
-    % Dodaj endpoints (type = 1)
+    % Dodaj endings (typ = 1)
     if ~isempty(endpoints)
         endpointQualities = computeSimpleQuality(endpoints, skeletonImage, 1);
         endpointData = [endpoints, endpointOrientations, ones(size(endpoints,1), 1), endpointQualities];
         minutiae = [minutiae; endpointData];
     end
     
-    % Dodaj bifurkacje (type = 2) z ŁAGODNIEJSZYMI kryteriami
+    % Dodaj bifurcations (typ = 2) z łagodniejszymi kryteriami jakości
     if ~isempty(bifurcations)
         bifurcationQualities = computeSimpleQuality(bifurcations, skeletonImage, 2);
         bifurcationData = [bifurcations, bifurcationOrientations, 2*ones(size(bifurcations,1), 1), bifurcationQualities];
@@ -59,33 +77,33 @@ try
     logInfo(sprintf('Found %d endpoints and %d bifurcations before filtering', ...
         size(endpoints,1), size(bifurcations,1)), logFile);
     
-    % FILTRACJA (uproszczona)
+    % ETAP 4: FILTRACJA I OPTYMALIZACJA
     if ~isempty(minutiae)
-        % 1. Usuń duplikaty z AGRESYWNĄ filtracją dla bifurkacji
-        minutiae = removeCloseMinutiae(minutiae, 12); % Zwiększone z 8 do 12
+        % Usuń duplikaty i bliskie minucje (zwiększony próg dla bifurcacji)
+        minutiae = removeCloseMinutiae(minutiae, 12);
         
-        % 2. ŁAGODNA filtracja jakości - NIŻSZY próg dla bifurkacji
+        % Filtracja jakościowa z różnymi progami dla typów minucji
         keepMask = false(size(minutiae, 1), 1);
         for i = 1:size(minutiae, 1)
             type = minutiae(i, 4);
             quality = minutiae(i, 5);
             
-            if type == 1  % Endpoints
-                keepMask(i) = quality >= 0.2;  % Bez zmian
-            else  % Bifurkacje
-                keepMask(i) = quality >= 0.35; % Było 0.4, teraz niżej
+            if type == 1  % Endings - standardowy próg
+                keepMask(i) = quality >= 0.2;
+            else  % Bifurcations - łagodniejszy próg (było 0.4, teraz 0.35)
+                keepMask(i) = quality >= 0.35;
             end
         end
         
         minutiae = minutiae(keepMask, :);
         
-        % 3. Strategiczne ograniczenie z DOCELOWYMI PROPORCJAMI
+        % Strategiczne ograniczenie liczby z docelowymi proporcjami
         maxMinutiae = config.minutiae.filtering.maxMinutiae;
         if size(minutiae, 1) > maxMinutiae
             minutiae = limitMinutiaeWithTargetRatio(minutiae, maxMinutiae, 0.6); % 60% endpoints
         end
         
-        % Aktualizuj quality map
+        % Aktualizacja mapy jakości
         for i = 1:size(minutiae, 1)
             x = round(minutiae(i, 1));
             y = round(minutiae(i, 2));
@@ -95,7 +113,7 @@ try
         end
     end
     
-    % Finalne statystyki
+    % ETAP 5: STATYSTYKI KOŃCOWE
     endingCount = sum(minutiae(:, 4) == 1);
     bifurcationCount = sum(minutiae(:, 4) == 2);
     
@@ -109,31 +127,44 @@ catch ME
 end
 end
 
-%% HELPER FUNCTIONS (bazowane na oryginale)
+%% FUNKCJE POMOCNICZE DETEKCJI
 
 function [endpoints, bifurcations] = detectMinutiaePoints(skeletonImage)
-% DETECTMINUTIAEPOINTS z ULEPSZONĄ detekcją bifurkacji
+% DETECTMINUTIAEPOINTS Wykrywa kandydatów na minucje z ulepszoną detekcją bifurcacji
+%
+% Funkcja analizuje każdy piksel szkieletu i klasyfikuje go jako endpoint
+% (1 sąsiad) lub bifurcation (3 sąsiadów) na podstawie analizy sąsiedztwa 3x3.
+% Bifurcations podlegają dodatkowej walidacji geometrycznej i topologicznej.
+%
+% Parametry wejściowe:
+%   skeletonImage - obraz szkieletu (logical)
+%
+% Parametry wyjściowe:
+%   endpoints - macierz współrzędnych endings [x, y]
+%   bifurcations - macierz współrzędnych bifurcations [x, y]
 
 [rows, cols] = size(skeletonImage);
 endpoints = [];
 bifurcations = [];
-margin = 20; % Zwiększony margines dla bifurkacji
+margin = 20; % Zwiększony margines dla stabilniejszej detekcji bifurcacji
 
+% Przeskanuj obraz z pominięciem marginesów
 for y = margin+1:rows-margin
     for x = margin+1:cols-margin
         if ~skeletonImage(y, x)
-            continue;
+            continue; % Pomiń piksele tła
         end
         
-        % Policz sąsiadów w oknie 3x3
+        % Analiza sąsiedztwa 3x3
         neighborhood = skeletonImage(y-1:y+1, x-1:x+1);
         neighborhood(2,2) = false; % Wyłącz środkowy punkt
         neighbors = sum(neighborhood(:));
         
         if neighbors == 1
+            % Ending - punkt z jednym sąsiadem
             endpoints = [endpoints; x, y];
         elseif neighbors == 3
-            % ZNACZNIE OSTRZEJSZA walidacja bifurkacji
+            % Potencjalna bifurcation - wymaga dodatkowej walidacji
             if isValidBifurcationImproved(skeletonImage, x, y)
                 bifurcations = [bifurcations; x, y];
             end
@@ -143,11 +174,24 @@ end
 end
 
 function isValid = isValidBifurcationImproved(image, x, y)
-% ISVALIDBIFURCATIONIMPROVED Znacznie ostrzejsza walidacja bifurkacji
+% ISVALIDBIFURCATIONIMPROVED Wielopoziomowa walidacja bifurcacji
+%
+% Funkcja implementuje zaawansowany algorytm walidacji bifurkacji obejmujący:
+% - Walidację podstawową (dokładnie 3 sąsiadów w odpowiednich pozycjach)
+% - Analizę kontekstu w większym oknie (5x5)
+% - Sprawdzenie ciągłości linii papilarnych
+% - Test stabilności topologicznej
+%
+% Parametry wejściowe:
+%   image - obraz szkieletu
+%   x, y - współrzędne kandydata na bifurcję
+%
+% Parametry wyjściowe:
+%   isValid - true jeśli punkt jest prawdziwą bifurcacją
 
 isValid = false;
 
-% 1. PODSTAWOWA WALIDACJA 3x3
+% TEST 1: Podstawowa walidacja 3x3
 neighborhood = image(y-1:y+1, x-1:x+1);
 neighborhood(2,2) = false;
 
@@ -156,25 +200,25 @@ if sum(neighborhood(:)) ~= 3
     return;
 end
 
-% 2. SPRAWDŹ POZYCJE SĄSIADÓW
+% TEST 2: Sprawdź pozycje sąsiadów
 [ny, nx] = find(neighborhood);
 
-% Nie mogą być w jednej linii
+% Sąsiedzi nie mogą być w jednej linii (artefakt szkieletyzacji)
 if length(unique(ny)) == 1 || length(unique(nx)) == 1
     return;
 end
 
-% 3. WALIDACJA W OKNIE 5x5 - sprawdź czy to prawdziwa bifurkacja
+% TEST 3: Walidacja w większym oknie (5x5)
 if ~validateBifurcationInLargerWindow(image, x, y)
     return;
 end
 
-% 4. SPRAWDŹ CIĄGŁOŚĆ LINII PAPILARNYCH
+% TEST 4: Sprawdź ciągłość linii papilarnych
 if ~validateRidgeContinuity(image, x, y)
     return;
 end
 
-% 5. SPRAWDŹ STABILNOŚĆ (czy usunięcie punktu znacząco zmienia topologię)
+% TEST 5: Test stabilności topologicznej
 if ~validateTopologicalStability(image, x, y)
     return;
 end
@@ -183,12 +227,15 @@ isValid = true;
 end
 
 function isValid = validateBifurcationInLargerWindow(image, x, y)
-% VALIDATEBIFURCATIONINLARGERWINDOW Sprawdź kontekst w oknie 5x5
+% VALIDATEBIFURCATIONINLARGERWINDOW Sprawdza kontekst bifurcacji w oknie 5x5
+%
+% Funkcja analizuje rozkład pikseli szkieletu w większym oknie wokół kandydata
+% na bifurcację, sprawdzając czy lokalna topologia jest zgodna z prawdziwą bifurcacją.
 
 isValid = true;
 [rows, cols] = size(image);
 
-% Sprawdź okno 5x5
+% Określ granice okna 5x5
 r1 = max(1, y-2); r2 = min(rows, y+2);
 c1 = max(1, x-2); c2 = min(cols, x+2);
 
@@ -200,15 +247,19 @@ centerX = x - c1 + 1;
 neighbors_r1 = countNeighborsInRadius(window, centerX, centerY, 1);
 neighbors_r2 = countNeighborsInRadius(window, centerX, centerY, 2);
 
-% Bifurkacja powinna mieć 3 sąsiadów w promieniu 1
-% i nie więcej niż 6-8 w promieniu 2
+% Kryteria dla prawdziwej bifurcacji:
+% - Dokładnie 3 sąsiadów w promieniu 1
+% - Nie więcej niż 8 sąsiadów w promieniu 2 (unika zbyt gęstych regionów)
 if neighbors_r1 ~= 3 || neighbors_r2 > 8
     isValid = false;
 end
 end
 
 function count = countNeighborsInRadius(window, centerX, centerY, radius)
-% COUNTNEIGHBORSINRADIUS Policz piksele szkieletu w promieniu
+% COUNTNEIGHBORSINRADIUS Liczy piksele szkieletu w określonym promieniu
+%
+% Funkcja pomocnicza zliczająca liczbę pikseli szkieletu w okręgu o zadanym
+% promieniu wokół środkowego punktu, wykluczając sam środek.
 
 count = 0;
 [rows, cols] = size(window);
@@ -222,6 +273,7 @@ for dy = -radius:radius
         y = centerY + dy;
         x = centerX + dx;
         
+        % Sprawdź czy punkt mieści się w oknie i czy należy do szkieletu
         if x >= 1 && x <= cols && y >= 1 && y <= rows
             if window(y, x) == 1
                 count = count + 1;
@@ -232,12 +284,15 @@ end
 end
 
 function isValid = validateRidgeContinuity(image, x, y)
-% VALIDATERIDGECONTINUITY Sprawdź czy linie papilarne rzeczywiście się rozgałęziają
+% VALIDATERIDGECONTINUITY Sprawdza ciągłość linii papilarnych w bifurcacji
+%
+% Funkcja weryfikuje czy trzy gałęzie bifurkacji rzeczywiście reprezentują
+% ciągłe linie papilarne poprzez analizę połączeń każdego z trzech sąsiadów.
 
 isValid = true;
 [rows, cols] = size(image);
 
-% Znajdź 3 sąsiadów
+% Znajdź 3 sąsiadów bifurkacji
 neighborhood = image(y-1:y+1, x-1:x+1);
 neighborhood(2,2) = false;
 [ny, nx] = find(neighborhood);
@@ -245,41 +300,45 @@ neighborhood(2,2) = false;
 % Konwertuj na współrzędne globalne
 globalNeighbors = [nx + x - 2, ny + y - 2];
 
-% Dla każdego sąsiada sprawdź czy ma ciągłość linii
+% Dla każdego sąsiada sprawdź jakość jego połączeń
 validNeighbors = 0;
 for i = 1:size(globalNeighbors, 1)
     nx = globalNeighbors(i, 1);
     ny = globalNeighbors(i, 2);
     
     if nx > 1 && nx < cols && ny > 1 && ny < rows
-        % Sprawdź czy sąsiad ma właściwą liczbę połączeń
+        % Sprawdź sąsiedztwo tego sąsiada
         nNeighborhood = image(ny-1:ny+1, nx-1:nx+1);
         nNeighborhood(2,2) = false;
         nConnections = sum(nNeighborhood(:));
         
-        % Sąsiad bifurkacji powinien mieć 1-3 połączenia
+        % Sąsiad bifurcacji powinien mieć 1-3 połączenia (normalny fragment linii)
         if nConnections >= 1 && nConnections <= 3
             validNeighbors = validNeighbors + 1;
         end
     end
 end
 
-% Przynajmniej 2 z 3 sąsiadów musi być "dobrych"
+% Przynajmniej 2 z 3 sąsiadów musi reprezentować poprawne linie papilarne
 if validNeighbors < 2
     isValid = false;
 end
 end
 
 function isValid = validateTopologicalStability(image, x, y)
-% VALIDATETOPOLOGICALSTABILITY Sprawdź czy punkt jest topologicznie istotny
+% VALIDATETOPOLOGICALSTABILITY Test stabilności topologicznej bifurcacji
+%
+% Funkcja sprawdza czy usunięcie kandydata na bifurcję powoduje rozsądną
+% zmianę w topologii szkieletu. Nadmierna fragmentacja może wskazywać
+% na artefakt szkieletyzacji a nie prawdziwą bifurcację.
 
 isValid = true;
 
-% Utwórz kopię bez tego punktu
+% Utwórz kopię obrazu bez testowanego punktu
 testImage = image;
 testImage(y, x) = 0;
 
-% Sprawdź okno 7x7 wokół punktu
+% Analizuj okno 7x7 wokół punktu
 [rows, cols] = size(image);
 r1 = max(1, y-3); r2 = min(rows, y+3);
 c1 = max(1, x-3); c2 = min(cols, x+3);
@@ -287,30 +346,40 @@ c1 = max(1, x-3); c2 = min(cols, x+3);
 originalWindow = image(r1:r2, c1:c2);
 testWindow = testImage(r1:r2, c1:c2);
 
-% Policz składowe spójne
+% Policz składowe spójne przed i po usunięciu punktu
 ccOriginal = bwconncomp(originalWindow, 8);
 ccTest = bwconncomp(testWindow, 8);
 
-% Jeśli usunięcie punktu znacząco zwiększa fragmentację
-% MOŻE to oznaczać że punkt nie jest prawdziwą bifurkacją
+% Jeśli usunięcie punktu znacząco zwiększa fragmentację,
+% może to oznaczać że punkt nie jest prawdziwą bifurcacją
 if ccTest.NumObjects > ccOriginal.NumObjects + 1
     isValid = false;
 end
 
-% Sprawdź czy nie nastąpiła nadmierna fragmentacja
+% Dodatkowy test: sprawdź stopień fragmentacji
 totalPixelsOriginal = sum(originalWindow(:));
-totalPixelsTest = sum(testWindow(:));
-
 if totalPixelsOriginal > 0
     fragmentationRatio = ccTest.NumObjects / totalPixelsOriginal;
-    if fragmentationRatio > 0.3 % Arbitrary threshold
+    % Jeśli fragmentacja przekracza 30%, prawdopodobnie to artefakt
+    if fragmentationRatio > 0.3
         isValid = false;
     end
 end
 end
 
 function orientations = computeMinutiaeOrientations(skeleton, points)
-% COMPUTEMINUTIAEORIENTATIONS Oblicza orientacje minucji (jak w oryginale)
+% COMPUTEMINUTIAEORIENTATIONS Oblicza orientacje minucji metodą gradientową
+%
+% Funkcja szacuje kierunek linii papilarnych w okolicy każdej minucji poprzez
+% analizę gradientów w lokalnym oknie. Używa średniego ważonego gradientu
+% z wagami pochodzącymi z pikseli szkieletu.
+%
+% Parametry wejściowe:
+%   skeleton - obraz szkieletu linii papilarnych
+%   points - macierz współrzędnych minucji [x, y]
+%
+% Parametry wyjściowe:
+%   orientations - wektor orientacji w radianach
 
 if isempty(points)
     orientations = [];
@@ -318,7 +387,7 @@ if isempty(points)
 end
 
 orientations = zeros(size(points, 1), 1);
-windowSize = 7; % Trochę większe okno
+windowSize = 7; % Rozmiar okna analizy
 
 for i = 1:size(points, 1)
     try
@@ -326,6 +395,7 @@ for i = 1:size(points, 1)
         y = round(points(i, 2));
         
         [rows, cols] = size(skeleton);
+        % Określ granice lokalnego okna
         r1 = max(1, y - windowSize);
         r2 = min(rows, y + windowSize);
         c1 = max(1, x - windowSize);
@@ -333,34 +403,50 @@ for i = 1:size(points, 1)
         
         localWindow = skeleton(r1:r2, c1:c2);
         
+        % Oblicz orientację tylko jeśli okno zawiera wystarczająco pikseli szkieletu
         if sum(localWindow(:)) > 3
+            % Oblicz gradienty w lokalnym oknie
             [gx, gy] = gradient(double(localWindow));
-            weights = localWindow;
+            weights = localWindow; % Wagi z pikseli szkieletu
             
             if sum(weights(:)) > 0
+                % Średnia ważona gradientów
                 avgGx = sum(gx(:) .* weights(:)) / sum(weights(:));
                 avgGy = sum(gy(:) .* weights(:)) / sum(weights(:));
                 
+                % Oblicz orientację z gradientów
                 if abs(avgGx) > 0.01 || abs(avgGy) > 0.01
                     orientations(i) = atan2(avgGy, avgGx);
                 else
-                    orientations(i) = 0;
+                    orientations(i) = 0; % Gradient zbyt mały
                 end
             else
                 orientations(i) = 0;
             end
         else
-            orientations(i) = 0;
+            orientations(i) = 0; % Za mało danych w oknie
         end
         
     catch
-        orientations(i) = 0;
+        orientations(i) = 0; % Fallback w przypadku błędu
     end
 end
 end
 
 function qualities = computeSimpleQuality(points, skeleton, minutiaType)
-% COMPUTESIMPLEQUALITY Delikatnie złagodzone dla bifurkacji
+% COMPUTESIMPLEQUALITY Oblicza jakość minucji z różnymi kryteriami dla typów
+%
+% Funkcja ocenia jakość każdej minucji na podstawie pozycji względem brzegów,
+% lokalnej gęstości szkieletu i typu minucji. Bifurcations otrzymują
+% łagodniejsze kryteria ze względu na większą trudność ich detekcji.
+%
+% Parametry wejściowe:
+%   points - macierz współrzędnych minucji [x, y]
+%   skeleton - obraz szkieletu
+%   minutiaType - typ minucji (1=ending, 2=bifurcation)
+%
+% Parametry wyjściowe:
+%   qualities - wektor jakości w zakresie [0.1, 1.0]
 
 if isempty(points)
     qualities = [];
@@ -374,30 +460,30 @@ for i = 1:size(points, 1)
     x = round(points(i, 1));
     y = round(points(i, 2));
     
-    % Bazowa jakość - DELIKATNIE WYŻSZA dla bifurkacji
+    % BAZOWA JAKOŚĆ - różna dla typów minucji
     if minutiaType == 1
-        baseQuality = 0.8; % Endpoints (bez zmian)
+        baseQuality = 0.8; % Endings - standardowa bazowa jakość
     else
-        baseQuality = 0.75; % Bifurkacje (było 0.7, teraz wyżej)
+        baseQuality = 0.75; % Bifurcations - nieco wyższa (było 0.7)
     end
     
-    % Kara za bliskość brzegu - ŁAGODNIEJSZA dla bifurkacji
+    % KARA ZA BLISKOŚĆ BRZEGU - łagodniejsza dla bifurcacji
     distToBorder = min([x-1, y-1, cols-x, rows-y]);
-    if minutiaType == 1  % Endpoints (bez zmian)
+    if minutiaType == 1  % Endings - standardowe kryteria
         if distToBorder < 10
-            baseQuality = baseQuality * 0.7;
+            baseQuality = baseQuality * 0.7;  % Mocna kara za brzeg
         elseif distToBorder < 20
-            baseQuality = baseQuality * 0.9;
+            baseQuality = baseQuality * 0.9;  % Lekka kara za bliskość brzegu
         end
-    else  % Bifurkacje - ŁAGODNIEJSZE kary
-        if distToBorder < 8  % Było 10, teraz ostrzej ale krócej
-            baseQuality = baseQuality * 0.75; % Było 0.7, teraz łagodniej
-        elseif distToBorder < 15  % Było 20, teraz krócej
-            baseQuality = baseQuality * 0.92; % Było 0.9, teraz łagodniej
+    else  % Bifurcations - łagodniejsze kryteria
+        if distToBorder < 8   % Zmniejszony próg krytyczny (było 10)
+            baseQuality = baseQuality * 0.75; % Łagodniejsza kara (było 0.7)
+        elseif distToBorder < 15  % Zmniejszony próg ostrzeżenia (było 20)
+            baseQuality = baseQuality * 0.92; % Łagodniejsza kara (było 0.9)
         end
     end
     
-    % Sprawdź lokalne sąsiedztwo
+    % ANALIZA LOKALNEGO SĄSIEDZTWA
     windowSize = 3;
     r1 = max(1, y - windowSize);
     r2 = min(rows, y + windowSize);
@@ -407,30 +493,35 @@ for i = 1:size(points, 1)
     localWindow = skeleton(r1:r2, c1:c2);
     localDensity = sum(localWindow(:)) / numel(localWindow);
     
-    % RÓŻNE preferencje gęstości dla typów
-    if minutiaType == 1  % Endpoints
+    % RÓŻNE PREFERENCJE GĘSTOŚCI dla typów minucji
+    if minutiaType == 1  % Endings - preferują umiarkowaną gęstość
         if localDensity > 0.1 && localDensity < 0.8
-            qualityBonus = 1.1;
+            qualityBonus = 1.1;  % Bonus za optymalną gęstość
         else
-            qualityBonus = 0.9;
+            qualityBonus = 0.9;  % Kara za zbyt niską/wysoką gęstość
         end
-    else  % Bifurkacje - preferuj WYŻSZĄ gęstość
-        if localDensity > 0.15 && localDensity < 0.9  % Wyższy zakres
+    else  % Bifurcations - preferują wyższą gęstość
+        if localDensity > 0.15 && localDensity < 0.9  % Wyższy preferowany zakres
             qualityBonus = 1.15; % Większy bonus
         else
             qualityBonus = 0.95; % Mniejsza kara
         end
     end
     
+    % FINALNA JAKOŚĆ
     qualities(i) = baseQuality * qualityBonus;
 end
 
-% Ograniczenia
+% Ograniczenia jakości do rozsądnego zakresu
 qualities = max(0.1, min(1.0, qualities));
 end
 
 function filteredMinutiae = removeCloseMinutiae(minutiae, minDistance)
-% REMOVECLOSEMINUTIAE Delikatnie złagodzone dla bifurkacji
+% REMOVECLOSEMINUTIAE Usuwa bliskie minucje z preferencjami dla bifurcacji
+%
+% Funkcja eliminuje minucje znajdujące się zbyt blisko siebie, używając
+% różnych progów odległości i strategii wyboru w zależności od typów minucji.
+% Bifurcations otrzymują łagodniejsze traktowanie ze względu na rzadkość.
 
 if size(minutiae, 1) <= 1
     filteredMinutiae = minutiae;
@@ -442,6 +533,7 @@ types = minutiae(:, 4);
 qualities = minutiae(:, 5);
 toKeep = true(size(points, 1), 1);
 
+% Analiza par minucji pod kątem bliskości
 for i = 1:size(points, 1)-1
     if ~toKeep(i), continue; end
     
@@ -450,25 +542,25 @@ for i = 1:size(points, 1)-1
         
         dist = norm(points(i,:) - points(j,:));
         
-        % DELIKATNIE złagodzone progi odległości
+        % PROGI ODLEGŁOŚCI zależne od typów minucji
         type_i = types(i);
         type_j = types(j);
         
         if type_i == 2 && type_j == 2
-            % Bifurkacja vs Bifurkacja - trochę łagodniej
-            distanceThreshold = minDistance * 2.2; % Było 2.5, teraz 2.2 (18 px)
+            % Bifurcation vs Bifurcation - najbardziej łagodny próg
+            distanceThreshold = minDistance * 2.2; % 26.4 pikseli
         elseif type_i == 2 || type_j == 2
-            % Bifurkacja vs Endpoint - trochę łagodniej
-            distanceThreshold = minDistance * 1.3; % Było 1.5, teraz 1.3 (10.4 px)
+            % Bifurcation vs Ending - umiarkowany próg
+            distanceThreshold = minDistance * 1.3; % 15.6 pikseli
         else
-            % Endpoint vs Endpoint - bez zmian
-            distanceThreshold = minDistance; % 8 pikseli
+            % Ending vs Ending - standardowy próg
+            distanceThreshold = minDistance; % 12 pikseli
         end
         
+        % STRATEGIA WYBORU gdy minucje są za blisko
         if dist < distanceThreshold
-            % ŁAGODNIEJSZA strategia dla bifurkacji
             if type_i == 2 && type_j == 2
-                % Oba to bifurkacje - usuń gorszą (bez zmian)
+                % Oba to bifurcations - usuń gorszą jakościowo
                 if qualities(i) >= qualities(j)
                     toKeep(j) = false;
                 else
@@ -476,23 +568,23 @@ for i = 1:size(points, 1)-1
                     break;
                 end
             elseif type_i == 2 && type_j == 1
-                % i=bifurkacja, j=endpoint - CZASEM zachowaj bifurkację
-                if qualities(i) > qualities(j) * 1.2  % Bifurkacja musi być 20% lepsza
+                % Bifurcation vs Ending - bifurcation musi być 20% lepsza żeby zostać
+                if qualities(i) > qualities(j) * 1.2
                     toKeep(j) = false;
                 else
                     toKeep(i) = false;
                     break;
                 end
             elseif type_i == 1 && type_j == 2
-                % i=endpoint, j=bifurkacja - CZASEM zachowaj bifurkację
-                if qualities(j) > qualities(i) * 1.2  % Bifurkacja musi być 20% lepsza
+                % Ending vs Bifurcation - bifurcation musi być 20% lepsza żeby zostać
+                if qualities(j) > qualities(i) * 1.2
                     toKeep(i) = false;
                     break;
                 else
                     toKeep(j) = false;
                 end
             else
-                % Oba to endpoints - usuń gorszą (bez zmian)
+                % Oba to endings - usuń gorszą jakościowo
                 if qualities(i) >= qualities(j)
                     toKeep(j) = false;
                 else
@@ -508,13 +600,17 @@ filteredMinutiae = minutiae(toKeep, :);
 end
 
 function limitedMinutiae = limitMinutiaeWithTargetRatio(minutiae, maxCount, endpointRatio)
-% LIMITMINUTIAEWITHTARGETRATIO z dodatkową filtracją przestrzenną
+% LIMITMINUTIAEWITHTARGETRATIO Ogranicza liczbę minucji z kontrolą proporcji
+%
+% Funkcja ogranicza liczbę minucji do maksymalnej wartości, starając się
+% zachować zadane proporcje między endings a bifurcations. Dodatkowo
+% stosuje filtrację przestrzenną dla bifurcacji.
 
-% Podziel na typy
+% Podział na typy
 endpoints = minutiae(minutiae(:, 4) == 1, :);
 bifurcations = minutiae(minutiae(:, 4) == 2, :);
 
-% Sortuj według jakości
+% Sortowanie według jakości (najlepsze pierwsze)
 if ~isempty(endpoints)
     [~, endOrder] = sort(endpoints(:, 5), 'descend');
     endpoints = endpoints(endOrder, :);
@@ -525,16 +621,16 @@ if ~isempty(bifurcations)
     bifurcations = bifurcations(bifOrder, :);
 end
 
-% DODATKOWA FILTRACJA PRZESTRZENNA dla bifurkacji
+% DODATKOWA FILTRACJA PRZESTRZENNA dla bifurcacji
 if size(bifurcations, 1) > 0
     bifurcations = applyAdditionalSpatialFiltering(bifurcations);
 end
 
-% Oblicz docelowe liczby
+% Obliczenie docelowych liczb z zachowaniem proporcji
 targetEndpoints = min(size(endpoints, 1), round(maxCount * endpointRatio));
 targetBifurcations = min(size(bifurcations, 1), maxCount - targetEndpoints);
 
-% Wybierz najlepsze z każdej grupy
+% Wybór najlepszych z każdej grupy
 selectedEndpoints = [];
 selectedBifurcations = [];
 
@@ -550,7 +646,10 @@ limitedMinutiae = [selectedEndpoints; selectedBifurcations];
 end
 
 function filteredBifurcations = applyAdditionalSpatialFiltering(bifurcations)
-% APPLYADDITIONALSPATIALFILTERING Trochę łagodniejsza filtracja przestrzenna
+% APPLYADDITIONALSPATIALFILTERING Dodatkowa filtracja przestrzenna bifurcacji
+%
+% Funkcja stosuje siatkę przestrzenną i ogranicza liczbę bifurcacji na komórkę
+% siatki, zapobiegając nadmiernej koncentracji bifurcacji w jednym miejscu.
 
 if size(bifurcations, 1) <= 1
     filteredBifurcations = bifurcations;
@@ -579,12 +678,12 @@ for i = 1:size(bifurcations, 1)
     cellAssignments(i, :) = [cellX, cellY];
 end
 
-% Dla każdej komórki, zachowaj najlepsze bifurkacje
+% Dla każdej komórki, zachowaj najlepsze bifurcje
 toKeep = false(size(bifurcations, 1), 1);
 
 for cellX = 1:nCellsX
     for cellY = 1:nCellsY
-        % Znajdź bifurkacje w tej komórce
+        % Znajdź bifurkcje w tej komórce
         inCell = (cellAssignments(:, 1) == cellX) & (cellAssignments(:, 2) == cellY);
         cellIndices = find(inCell);
         
@@ -602,71 +701,4 @@ for cellX = 1:nCellsX
 end
 
 filteredBifurcations = bifurcations(toKeep, :);
-end
-
-function isValid = hasProperBifurcationGeometry(image, x, y)
-% HASPROPERBIFURCATIONGEOMETRY Sprawdź geometrię bifurkacji
-
-isValid = true;
-
-% Znajdź 3 sąsiadów i oblicz kąty między nimi
-neighborhood = image(y-1:y+1, x-1:x+1);
-neighborhood(2,2) = false;
-[ny, nx] = find(neighborhood);
-
-if length(ny) ~= 3
-    isValid = false;
-    return;
-end
-
-% Oblicz kąty od środka do każdego sąsiada
-angles = atan2(ny - 2, nx - 2); % względem środka (2,2)
-
-% Sortuj kąty
-angles = sort(angles);
-
-% Oblicz różnice między sąsiednimi kątami
-angleDiffs = [diff(angles); 2*pi + angles(1) - angles(end)];
-
-% Wszystkie kąty powinny być >= 60° (pi/3)
-% OSTRZEJSZE kryterium: >= 80°
-minAngleDiff = min(angleDiffs);
-if minAngleDiff < pi * 80 / 180  % 80 stopni
-    isValid = false;
-end
-end
-
-function isValid = isNotSkeletonArtifact(image, x, y)
-% ISNOTSKELETONARTIFACT Sprawdź czy to nie artefakt szkieletyzacji
-
-isValid = true;
-
-% Sprawdź regularność w oknie 7x7
-[rows, cols] = size(image);
-r1 = max(1, y-3); r2 = min(rows, y+3);
-c1 = max(1, x-3); c2 = min(cols, x+3);
-
-window = image(r1:r2, c1:c2);
-
-% Policz punkty szkieletu w oknie
-skeletonPixels = sum(window(:));
-
-% Sprawdź "gęstość" szkieletu - zbyt wysoka może oznaczać artefakt
-windowSize = (r2-r1+1) * (c2-c1+1);
-density = skeletonPixels / windowSize;
-
-% Zbyt wysoka gęstość = prawdopodobnie artefakt
-if density > 0.4  % 40% pikseli to szkielet
-    isValid = false;
-end
-
-% Sprawdź "regularność" - czy jest zbyt chaotycznie
-[gx, gy] = gradient(double(window));
-gradientMagnitude = sqrt(gx.^2 + gy.^2);
-gradientVariance = var(gradientMagnitude(:));
-
-% Zbyt wysoka wariancja gradientu = chaotyczny region
-if gradientVariance > 2.0
-    isValid = false;
-end
 end

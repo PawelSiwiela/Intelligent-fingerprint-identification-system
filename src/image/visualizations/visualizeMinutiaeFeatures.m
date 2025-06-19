@@ -1,5 +1,28 @@
 function visualizeMinutiaeFeatures(features, labels, metadata, outputDir)
-% VISUALIZEMINUTIAEFEATURES Profesjonalne wizualizacje wzorowane na oryginałach
+% VISUALIZEMINUTIAEFEATURES Profesjonalne wizualizacje cech minucji odcisków palców
+%
+% Funkcja generuje kompleksową analizę wizualną cech minucji obejmującą:
+% 1. Zaawansowane statystyki minucji (rozkłady, typy, jakość)
+% 2. Profile palców w formie radar charts
+% 3. Analizę rozkładów i korelacji między cechami
+%
+% Parametry wejściowe:
+%   features - macierz cech [n_samples × n_features] z ekstraktowanymi cechami minucji
+%   labels - wektor etykiet klas [1×n] odpowiadający próbkom
+%   metadata - struktura z nazwami palców i informacjami o klasach
+%   outputDir - katalog wyjściowy dla wizualizacji (opcjonalny, domyślnie 'output/figures')
+%
+% Dane wyjściowe:
+%   - minutiae_advanced_analysis.png - Zaawansowane statystyki minucji
+%   - minutiae_finger_profiles.png - Profile palców (radar charts)
+%   - minutiae_distribution_analysis.png - Analiza rozkładów i korelacji
+%
+% Wizualizowane cechy:
+%   - Całkowita liczba minucji (cecha 27)
+%   - Liczba endpoints (cecha 28) i bifurcations (cecha 29)
+%   - Średnia jakość minucji (cecha 30)
+%   - Pozycje centroidów (cechy 31-32)
+%   - Rozkłady przestrzenne i korelacje międzycechowe
 
 if nargin < 4
     outputDir = 'output/figures';
@@ -12,15 +35,15 @@ end
 fprintf('\n📊 Creating professional minutiae analysis...\n');
 
 try
-    %% 1. ANALIZA MINUCJI - ZAAWANSOWANE STATYSTYKI (jak oryginał)
+    %% KROK 1: ANALIZA MINUCJI - ZAAWANSOWANE STATYSTYKI (wzorowane na oryginałach)
     fprintf('  Creating advanced minutiae analysis...\n');
     createAdvancedMinutiaeAnalysis(features, labels, metadata, outputDir);
     
-    %% 2. PROFIL PALCÓW - RADAR CHARTS (jak oryginał)
+    %% KROK 2: PROFIL PALCÓW - RADAR CHARTS (wzorowane na oryginałach)
     fprintf('  Creating finger profiles analysis...\n');
     createFingerProfilesAnalysis(features, labels, metadata, outputDir);
     
-    %% 3. ANALIZA ROZKŁADÓW I KORELACJI
+    %% KROK 3: ANALIZA ROZKŁADÓW I KORELACJI
     fprintf('  Creating distribution analysis...\n');
     createDistributionAnalysis(features, labels, metadata, outputDir);
     
@@ -33,7 +56,15 @@ end
 end
 
 function createAdvancedMinutiaeAnalysis(features, labels, metadata, outputDir)
-% CREATEADVANCEDMINUTIAEANALYSIS - Wzorowane na "ANALIZA MINUCJI - ZAAWANSOWANE STATYSTYKI"
+% CREATEADVANCEDMINUTIAEANALYSIS Zaawansowane statystyki minucji
+%
+% Generuje kompleksową analizę składającą się z 6 wykresów:
+% 1. Średnia liczba minucji według typu (endpoints vs bifurcations)
+% 2. Rozkład stosunku endpoints/bifurcations w całym zbiorze
+% 3. Mapa cieplna E/B według palca
+% 4. Histogram jakości minucji
+% 5. Liczba minucji vs stosunek E/B (scatter plot)
+% 6. Statystyki przestrzenne (gęstość vs rozprzestrzenienie)
 
 figure('Position', [100, 100, 1400, 1000]);
 
@@ -47,10 +78,10 @@ for i = 1:length(uniqueLabels)
     end
 end
 
-%% SUBPLOT 1: ŚREDNIA LICZBA MINUCJI WG TYPU (jak oryginał)
+%% SUBPLOT 1: ŚREDNIA LICZBA MINUCJI WG TYPU (wzorowane na oryginałach)
 subplot(2, 3, 1);
 
-% Zbierz dane dla każdego palca
+% AGREGACJA danych dla każdego palca
 endpointMeans = [];
 bifurcationMeans = [];
 
@@ -60,7 +91,7 @@ for i = 1:length(uniqueLabels)
     bifurcationMeans(i) = mean(features(fingerMask, 29)); % Bifurcations
 end
 
-% Wykres słupkowy jak w oryginale
+% WYKRES słupkowy porównawczy (styl oryginalny)
 x = 1:length(uniqueLabels);
 width = 0.35;
 b1 = bar(x - width/2, endpointMeans, width, 'FaceColor', [0.2, 0.4, 0.8]);
@@ -75,13 +106,13 @@ legend([b1, b2], {'Endpoints', 'Bifurcations'}, 'Location', 'best');
 grid on;
 ylim([0, max([endpointMeans, bifurcationMeans]) * 1.1]);
 
-%% SUBPLOT 2: ROZKŁAD STOSUNKU ENDPOINTS/BIFURCATIONS (jak oryginał)
+%% SUBPLOT 2: ROZKŁAD STOSUNKU ENDPOINTS/BIFURCATIONS (histogram globalny)
 subplot(2, 3, 2);
 
-% Oblicz stosunek E/B dla każdego obrazu
+% OBLICZ stosunek E/B dla każdego obrazu z zabezpieczeniem dzielenia przez zero
 ratios = features(:, 28) ./ max(features(:, 29), 1); % Unikaj dzielenia przez 0
 
-% Histogram z czerwoną linią średniej
+% HISTOGRAM z czerwoną linią średniej
 h = histogram(ratios, 20, 'FaceColor', [0.7, 0.9, 0.7], 'EdgeColor', 'black', 'FaceAlpha', 0.8);
 hold on;
 
@@ -94,19 +125,19 @@ title('ROZKŁAD STOSUNKU ENDPOINTS/BIFURCATIONS', 'FontWeight', 'bold');
 legend(l, sprintf('Średnia (%.2f)', meanRatio), 'Location', 'best');
 grid on;
 
-%% SUBPLOT 3: MAPA CIEPLNA E/B WG PALCA (jak oryginał)
+%% SUBPLOT 3: MAPA CIEPLNA E/B WG PALCA (wzorowane na oryginałach)
 subplot(2, 3, 3);
 
-% Przygotuj dane dla mapy cieplnej
+% PRZYGOTOWANIE danych dla mapy cieplnej
 heatmapData = [endpointMeans; bifurcationMeans];
 
-% Wykres cieplny
+% WYKRES cieplny z hot colormap
 imagesc(heatmapData);
 colormap('hot');
 cb = colorbar;
 cb.Label.String = 'Średnia liczba minucji';
 
-% Dodaj wartości na mapie
+% DODANIE wartości tekstowych na mapie
 for i = 1:2
     for j = 1:length(uniqueLabels)
         text(j, i, sprintf('%.0f', heatmapData(i, j)), ...
@@ -122,7 +153,7 @@ title('MAPA CIEPLNA: E/B WG PALCA', 'FontWeight', 'bold');
 %% SUBPLOT 4: HISTOGRAM JAKOŚCI MINUCJI
 subplot(2, 3, 4);
 
-qualityData = features(:, 30); % Średnia jakość
+qualityData = features(:, 30); % Średnia jakość minucji
 h2 = histogram(qualityData, 20, 'FaceColor', [0.9, 0.7, 0.2], 'EdgeColor', 'black');
 hold on;
 l2 = xline(mean(qualityData), 'r-', 'LineWidth', 2);
@@ -133,14 +164,14 @@ title('ROZKŁAD JAKOŚCI MINUCJI', 'FontWeight', 'bold');
 legend(l2, sprintf('Średnia (%.3f)', mean(qualityData)), 'Location', 'best');
 grid on;
 
-%% SUBPLOT 5: LICZBA MINUCJI vs STOSUNEK E/B (ZMIENIONY!)
+%% SUBPLOT 5: LICZBA MINUCJI vs STOSUNEK E/B (scatter plot z trendami)
 subplot(2, 3, 5);
 
 totalMinutiae = features(:, 27); % Całkowita liczba minucji
 ratiosForScatter = features(:, 28) ./ max(features(:, 29), 1); % Stosunek E/B
 colors = lines(length(uniqueLabels));
 
-% Scatter plots z legendą
+% SCATTER PLOTS z legendą dla każdego palca
 scatterHandles = [];
 for i = 1:length(uniqueLabels)
     fingerMask = labels == uniqueLabels(i);
@@ -150,7 +181,7 @@ for i = 1:length(uniqueLabels)
     scatterHandles(i) = h_scatter;
 end
 
-% Trend line
+% LINIA trendu globalnego
 if length(totalMinutiae) > 1
     p = polyfit(totalMinutiae, ratiosForScatter, 1);
     xfit = linspace(min(totalMinutiae), max(totalMinutiae), 100);
@@ -159,20 +190,20 @@ if length(totalMinutiae) > 1
 end
 
 xlabel('Całkowita liczba minucji');
-ylabel('Stosunek E/B'); % ZMIENIONA ETYKIETA
-title('LICZBA MINUCJI vs STOSUNEK E/B', 'FontSize', 10, 'FontWeight', 'bold'); % ZMNIEJSZONE z 12 na 10
+ylabel('Stosunek E/B');
+title('LICZBA MINUCJI vs STOSUNEK E/B', 'FontSize', 10, 'FontWeight', 'bold');
 legend(scatterHandles, fingerNames, 'Location', 'best', 'FontSize', 8);
 grid on;
 
 %% SUBPLOT 6: STATYSTYKI PRZESTRZENNE
 subplot(2, 3, 6);
 
-% Gęstość minucji vs rozprzestrzenienie
+% GĘSTOŚĆ minucji vs rozprzestrzenienie przestrzenne
 if size(features, 2) >= 42
-    density = features(:, 42);  % Gęstość
+    density = features(:, 42);  % Gęstość minucji
     spread = sqrt(features(:, 33).^2 + features(:, 34).^2); % Spreadx + SpreadY
     
-    % Scatter plots z legendą
+    % SCATTER PLOTS z legendą dla każdego palca
     scatterHandles2 = [];
     for i = 1:length(uniqueLabels)
         fingerMask = labels == uniqueLabels(i);
@@ -184,24 +215,29 @@ if size(features, 2) >= 42
     
     xlabel('Gęstość minucji');
     ylabel('Rozprzestrzenienie');
-    title('GĘSTOŚĆ vs ROZPRZESTRZENIENIE', 'FontSize', 10, 'FontWeight', 'bold'); % ZMNIEJSZONE z 12 na 10
+    title('GĘSTOŚĆ vs ROZPRZESTRZENIENIE', 'FontSize', 10, 'FontWeight', 'bold');
     legend(scatterHandles2, fingerNames, 'Location', 'best', 'FontSize', 8);
     grid on;
 else
+    % FALLBACK gdy brak danych przestrzennych
     text(0.5, 0.5, 'Brak danych przestrzennych', 'HorizontalAlignment', 'center');
     title('Analiza przestrzenna - brak danych');
 end
 
-% POPRAWIONY TYTUŁ GŁÓWNY
+% TYTUŁ GŁÓWNY FIGURY
 sgtitle('ANALIZA MINUCJI - ZAAWANSOWANE STATYSTYKI', 'FontSize', 16, 'FontWeight', 'bold');
 
-% Zapisz
+% ZAPIS FIGURY
 saveas(gcf, fullfile(outputDir, 'minutiae_advanced_analysis.png'));
 close(gcf);
 end
 
 function createFingerProfilesAnalysis(features, labels, metadata, outputDir)
-% CREATEFINGERPROFILESANALYSIS - POPRAWIONY radar chart bez thetalabels
+% CREATEFINGERPROFILESANALYSIS Profile palców w formie radar charts
+%
+% Tworzy radar chart pokazujący charakterystyczne profile każdego palca
+% na podstawie 6 kluczowych cech minucji. Każdy palec ma unikalny profil
+% znormalizowany do skali procentowej dla łatwego porównania.
 
 figure('Position', [100, 100, 1200, 1200]);
 
@@ -215,11 +251,11 @@ for i = 1:length(uniqueLabels)
     end
 end
 
-% Wybierz 6 kluczowych cech dla profilu (mniej = czytelniej)
+% WYBÓR 6 kluczowych cech dla profilu (mniej = czytelniej)
 selectedFeatures = [27, 28, 29, 30, 31, 32]; % Dostępne cechy
 selectedNames = {'Liczba\nminucji', 'Endpoints', 'Bifurcations', 'Jakość', 'Centroid X', 'Centroid Y'};
 
-% Ogranicz do dostępnych cech
+% OGRANICZENIE do dostępnych cech w zbiorze danych
 availableFeatures = selectedFeatures(selectedFeatures <= size(features, 2));
 availableNames = selectedNames(selectedFeatures <= size(features, 2));
 
@@ -230,7 +266,7 @@ if length(availableFeatures) < 3
     return;
 end
 
-%% Oblicz profile dla każdego palca
+%% OBLICZENIE profili dla każdego palca (średnie wartości)
 profiles = zeros(length(uniqueLabels), length(availableFeatures));
 for i = 1:length(uniqueLabels)
     fingerMask = labels == uniqueLabels(i);
@@ -238,7 +274,7 @@ for i = 1:length(uniqueLabels)
     profiles(i, :) = mean(fingerFeatures, 1);
 end
 
-% Normalizuj do procentów maksimum (jak w oryginale)
+% NORMALIZACJA do procentów maksimum (wzorowane na oryginałach)
 for j = 1:size(profiles, 2)
     maxVal = max(profiles(:, j));
     if maxVal > 0
@@ -246,17 +282,17 @@ for j = 1:size(profiles, 2)
     end
 end
 
-%% RADAR CHART - POPRAWIONA WERSJA
-% Kąty dla każdej cechy
+%% RADAR CHART - poprawiona implementacja
+% KĄTY dla każdej cechy (równomiernie rozłożone)
 angles = linspace(0, 2*pi, length(availableFeatures) + 1);
 
-% Kolory dla każdego palca
+% KOLORY dla każdego palca
 colors = lines(length(uniqueLabels));
 
-% Rysuj profile
+% RYSOWANIE profili dla każdego palca
 plotHandles = [];
 for i = 1:length(uniqueLabels)
-    % Zamknij profil (dodaj pierwszy punkt na końcu)
+    % ZAMKNIĘCIE profilu (dodaj pierwszy punkt na końcu)
     profileData = [profiles(i, :), profiles(i, 1)];
     
     h = polarplot(angles, profileData, 'o-', 'Color', colors(i, :), ...
@@ -266,26 +302,34 @@ for i = 1:length(uniqueLabels)
     plotHandles(i) = h;
 end
 
-% RĘCZNE USTAWIENIE ETYKIET (zamiast thetalabels)
+% RĘCZNE USTAWIENIE etykiet (zamiast thetalabels dla kompatybilności)
 ax = gca;
 ax.ThetaTick = rad2deg(angles(1:end-1)); % Konwersja na stopnie
 ax.ThetaTickLabel = availableNames;
 
-% Ustaw promień
+% USTAWIENIA promienia i podziałki
 rlim([0, 110]);
 rticks([0, 20, 40, 60, 80, 100]);
 
-% Tytuł i legenda
+% TYTUŁ i legenda
 title('PROFIL PALCÓW (% max)', 'FontSize', 16, 'FontWeight', 'bold');
 legend(plotHandles, fingerNames, 'Location', 'best', 'FontSize', 10);
 
-% Zapisz
+% ZAPIS FIGURY
 saveas(gcf, fullfile(outputDir, 'minutiae_finger_profiles.png'));
 close(gcf);
 end
 
 function createDistributionAnalysis(features, labels, metadata, outputDir)
-% CREATEDISTRIBUTIONANALYSIS - Z LEPSZYMI OPISAMI CECH I POPRAWKAMI NAKŁADANIA
+% CREATEDISTRIBUTIONANALYSIS Analiza rozkładów i korelacji cech minucji
+%
+% Generuje kompleksową analizę rozkładów statystycznych składającą się z:
+% 1. Histogramy liczby minucji per palec
+% 2. Box ploty stosunku E/B per palec
+% 3. Macierz korelacji kluczowych cech
+% 4. Scatter plot endpoints vs bifurcations
+% 5. Rozmieszczenie centroidów w przestrzeni
+% 6. Statystyki sumaryczne dla każdego palca
 
 figure('Position', [100, 100, 1400, 1000]);
 
@@ -301,7 +345,7 @@ end
 
 colors = lines(length(uniqueLabels));
 
-%% SUBPLOT 1: Rozkład liczby minucji per palec
+%% SUBPLOT 1: ROZKŁAD LICZBY MINUCJI PER PALEC
 subplot(2, 3, 1);
 
 totalMinutiae = features(:, 27);
@@ -323,14 +367,14 @@ title('ROZKŁAD LICZBY MINUCJI PER PALEC', 'FontSize', 10, 'FontWeight', 'bold')
 legend(histHandles, fingerNames, 'Location', 'best', 'FontSize', 8);
 grid on;
 
-%% SUBPLOT 2: Box plot STOSUNKU E/B per palec - POPRAWIONE ETYKIETY I YLIM
+%% SUBPLOT 2: BOX PLOT STOSUNKU E/B PER PALEC
 subplot(2, 3, 2);
 
 ratioData = [];
 groupLabels = [];
 groupNames = {};
 
-% Zbierz dane z zabezpieczeniami
+% ZBIERANIE danych z zabezpieczeniami przeciw dzieleniu przez zero
 for i = 1:length(uniqueLabels)
     fingerMask = labels == uniqueLabels(i);
     fingerEndpoints = features(fingerMask, 28);
@@ -339,29 +383,27 @@ for i = 1:length(uniqueLabels)
     % ZABEZPIECZENIE: upewnij się że nie dzielimy przez zero
     fingerRatios = fingerEndpoints ./ max(fingerBifurcations, 0.1);
     
-    % Usuń outliers (stosunki > 20 to prawdopodobnie błędy)
+    % USUŃ outliers (stosunki > 20 to prawdopodobnie błędy)
     validRatios = fingerRatios(fingerRatios <= 20 & fingerRatios >= 0.01);
     
     if ~isempty(validRatios)
         ratioData = [ratioData; validRatios(:)];
         groupLabels = [groupLabels; repmat(i, length(validRatios), 1)];
-        groupNames{i} = fingerNames{i}; % Tylko nazwa palca
+        groupNames{i} = fingerNames{i};
     else
         ratioData = [ratioData; NaN];
         groupLabels = [groupLabels; i];
-        groupNames{i} = fingerNames{i}; % Tylko nazwa palca
+        groupNames{i} = fingerNames{i};
     end
 end
 
 try
-    % Usuń grupy z samymi NaN
+    % USUŃ grupy z samymi NaN
     validGroups = ~isnan(ratioData);
     if sum(validGroups) > 0
         boxplot(ratioData(validGroups), groupLabels(validGroups), 'Labels', groupNames);
         
-        % POPRAWKA: Ustaw xtickangle(45) jak żądasz
         xtickangle(45);
-        
         ylim([0 9]);
         
         ylabel('Stosunek E/B');
@@ -372,7 +414,7 @@ try
         title('STOSUNEK E/B - Brak danych', 'FontSize', 9, 'FontWeight', 'bold');
     end
 catch
-    % Fallback - wykres słupkowy
+    % FALLBACK - wykres słupkowy gdy boxplot nie działa
     fprintf('⚠️  Boxplot failed, using bar chart fallback\n');
     
     barData = [];
@@ -395,7 +437,7 @@ catch
             end
             
             barData(end+1) = meanRatio;
-            barNames{end+1} = fingerNames{i}; % Tylko nazwa palca
+            barNames{end+1} = fingerNames{i};
         end
     end
     
@@ -407,18 +449,17 @@ catch
         end
         
         set(gca, 'XTick', 1:length(barNames), 'XTickLabel', barNames);
-        
-        % POPRAWKA: Zastosuj xtickangle(45) również w fallback
         xtickangle(45);
         
-        % POPRAWKA: Zwiększ ylim dla miejsca na etykiety
+        % ZWIĘKSZENIE ylim dla miejsca na etykiety
         maxBarValue = max(barData);
-        ylim([0, maxBarValue * 1.2]); % Zwiększ górną granicę o 20%
+        ylim([0, maxBarValue * 1.2]);
         
         ylabel('Średni stosunek E/B');
         title('ŚREDNI STOSUNEK E/B', 'FontSize', 9, 'FontWeight', 'bold');
         grid on;
         
+        % WARTOŚCI na słupkach
         for i = 1:length(barData)
             text(i, barData(i) + maxBarValue * 0.05, sprintf('%.2f', barData(i)), ...
                 'HorizontalAlignment', 'center', 'FontWeight', 'bold', 'FontSize', 8);
@@ -429,32 +470,32 @@ catch
     end
 end
 
-%% SUBPLOT 3: KORELACJA WYBRANYCH KLUCZOWYCH CECH - POWRÓT DO POPRZEDNIEJ WERSJI
+%% SUBPLOT 3: KORELACJA WYBRANYCH KLUCZOWYCH CECH
 subplot(2, 3, 3);
 
-% POWRÓT: Wybierz tylko kluczowe cechy dla lepszej czytelności
+% WYBÓR tylko kluczowych cech dla lepszej czytelności
 if size(features, 2) >= 32
-    % Wybierz reprezentatywne cechy
+    % REPREZENTATYWNE cechy
     selectedFeatures = [27, 28, 29, 30, 31]; % Liczba, Endpoints, Bifurcations, Jakość, CentroidX
     selectedNames = {'Liczba', 'Endpoints', 'Bifurcations', 'Jakość', 'Stor.E/B'};
     
-    % DODAJ OBLICZONY STOSUNEK E/B jako 6. cecha
+    % DODANIE obliczonego stosunku E/B jako 6. cecha
     ratioFeature = features(:, 28) ./ max(features(:, 29), 0.1);
     selectedData = [features(:, selectedFeatures), ratioFeature];
     selectedNames{end+1} = 'Stor.E/B';
     
-    % Usuń próbki z NaN/Inf
+    % USUŃ próbki z NaN/Inf
     validRows = all(isfinite(selectedData), 2) & all(~isnan(selectedData), 2);
     selectedData = selectedData(validRows, :);
     
     if size(selectedData, 1) > 3
-        % Oblicz korelację dla wybranych cech
+        % OBLICZ korelację dla wybranych cech
         corrMatrix = corr(selectedData);
         
-        % Wyświetl macierz korelacji
+        % WYŚWIETL macierz korelacji
         imagesc(corrMatrix);
         
-        % Użyj lepszej mapy kolorów
+        % LEPSZA mapa kolorów
         cmap = redblue(64);
         colormap(cmap);
         
@@ -462,12 +503,12 @@ if size(features, 2) >= 32
         cb.Label.String = 'Korelacja';
         caxis([-1, 1]);
         
-        % LEPSZE ETYKIETY - wszystkie widoczne
+        % ETYKIETY - wszystkie widoczne
         set(gca, 'XTick', 1:length(selectedNames), 'YTick', 1:length(selectedNames));
         set(gca, 'XTickLabel', selectedNames, 'YTickLabel', selectedNames);
         xtickangle(45);
         
-        % Dodaj wartości korelacji w komórkach
+        % WARTOŚCI korelacji w komórkach
         for i = 1:length(selectedNames)
             for j = 1:length(selectedNames)
                 if corrMatrix(i,j) > 0.6
@@ -495,7 +536,7 @@ else
     title('KORELACJA - Brak cech', 'FontSize', 10, 'FontWeight', 'bold');
 end
 
-%% SUBPLOT 4: Endpoints vs Bifurcations per palec
+%% SUBPLOT 4: ENDPOINTS vs BIFURCATIONS PER PALEC
 subplot(2, 3, 4);
 
 endpoints = features(:, 28);
@@ -510,7 +551,7 @@ for i = 1:length(uniqueLabels)
     scatterHandles(i) = h;
 end
 
-% Linia referencja y=x
+% LINIA referencyjna y=x
 maxVal = max([max(endpoints), max(bifurcations)]);
 refLine = plot([0, maxVal], [0, maxVal], 'k:', 'LineWidth', 2, 'DisplayName', 'y=x');
 
@@ -520,7 +561,7 @@ title('ENDPOINTS vs BIFURCATIONS', 'FontSize', 10, 'FontWeight', 'bold');
 legend([scatterHandles, refLine], [fingerNames, {'y=x'}], 'Location', 'best', 'FontSize', 8);
 grid on;
 
-%% SUBPLOT 5: Rozmieszczenie centroidów
+%% SUBPLOT 5: ROZMIESZCZENIE CENTROIDÓW
 subplot(2, 3, 5);
 
 if size(features, 2) >= 32
@@ -546,7 +587,7 @@ else
     title('Centroids - brak danych', 'FontSize', 10, 'FontWeight', 'bold');
 end
 
-%% SUBPLOT 6: Statystyki sumaryczne - POPRAWIONE ETYKIETY
+%% SUBPLOT 6: STATYSTYKI SUMARYCZNE
 subplot(2, 3, 6);
 
 statsData = [];
@@ -564,7 +605,7 @@ for i = 1:length(uniqueLabels)
         meanRatio = mean(fingerEndpoints ./ max(fingerBifurcations, 0.1));
         
         statsData = [statsData; meanTotal, meanQuality, meanRatio];
-        statsNames{end+1} = fingerNames{i}; % POPRAWKA: Tylko nazwa palca
+        statsNames{end+1} = fingerNames{i};
     end
 end
 
@@ -581,18 +622,28 @@ else
     title('STATYSTYKI - Brak danych', 'FontSize', 10, 'FontWeight', 'bold');
 end
 
+% TYTUŁ GŁÓWNY FIGURY
 sgtitle('ANALIZA ROZKŁADÓW I ZALEŻNOŚCI CECH MINUCJI', 'FontSize', 16, 'FontWeight', 'bold');
 
-% Zapisz
+% ZAPIS FIGURY
 saveas(gcf, fullfile(outputDir, 'minutiae_distribution_analysis.png'));
 close(gcf);
 end
 
 function cmap = redblue(n)
-% REDBLUE Tworzy mapę kolorów od niebieskiego przez biały do czerwonego
+% REDBLUE Tworzy mapę kolorów red-blue dla macierzy korelacji
 %
-% Args:
-%   n - liczba kolorów (domyślnie 256)
+% Generuje mapę kolorów przechodzącą od niebieskiego przez biały do czerwonego.
+% Idealna dla wizualizacji korelacji gdzie:
+% - Niebieski = korelacja ujemna
+% - Biały = brak korelacji
+% - Czerwony = korelacja dodatnia
+%
+% Parametry wejściowe:
+%   n - liczba kolorów (opcjonalny, domyślnie 256)
+%
+% Dane wyjściowe:
+%   cmap - macierz kolorów [n×3] w formacie RGB
 
 if nargin < 1
     n = 256;

@@ -1,9 +1,27 @@
 function visualizePreprocessingPipeline(outputDir, logFile)
 % VISUALIZEPREPROCESSINGPIPELINE Pokazuje kompletny pipeline preprocessingu
 %
-% Argumenty:
-%   outputDir - katalog wyjściowy dla wizualizacji
-%   logFile - plik logów
+% Funkcja generuje kompleksową wizualizację 9-etapowego procesu preprocessingu
+% odcisków palców, od oryginalnego obrazu do finalnego wyniku z analizą pokrycia.
+% Automatycznie wyszukuje przykładowy obraz z dostępnych danych.
+%
+% Parametry wejściowe:
+%   outputDir - katalog wyjściowy dla wizualizacji (opcjonalny, domyślnie 'output/figures')
+%   logFile - uchwyt pliku do logowania (opcjonalny, domyślnie [])
+%
+% Dane wyjściowe:
+%   - preprocessing_pipeline.png - Wizualizacja wszystkich 9 kroków procesu
+%
+% Wizualizowane kroki:
+%   1. ORYGINALNY - obraz wejściowy
+%   2. SKALA SZAROŚCI - konwersja do odcieni szarości
+%   3. ORIENTACJA - analiza kierunków linii papilarnych
+%   4. CZĘSTOTLIWOŚĆ - mapa częstotliwości linii papilarnych
+%   5. GABOR - filtracja wzmacniająca linie papilarne
+%   6. SEGMENTACJA - wyodrębnienie obszaru odcisku
+%   7. BINARYZACJA - konwersja do obrazu binarnego
+%   8. SZKIELET - szkieletyzacja linii papilarnych
+%   9. WYNIK - finalny obraz z metryką pokrycia
 
 if nargin < 1, outputDir = fullfile(pwd, 'output', 'figures'); end
 if nargin < 2, logFile = []; end
@@ -11,7 +29,7 @@ if nargin < 2, logFile = []; end
 try
     logInfo('Generowanie wizualizacji pipeline preprocessingu...', logFile);
     
-    % Znajdź przykładowy obraz
+    % ZNAJDŹ przykładowy obraz
     config = loadConfig();
     [originalImage, fingerName] = findExampleImage(config);
     
@@ -20,7 +38,7 @@ try
         return;
     end
     
-    % Przygotuj obraz
+    % PRZYGOTUJ obraz
     if size(originalImage, 3) == 3
         grayImage = rgb2gray(originalImage);
     else
@@ -28,7 +46,7 @@ try
     end
     grayImage = im2double(grayImage);
     
-    % Wykonaj wszystkie kroki pipeline
+    % WYKONAJ wszystkie kroki pipeline
     orientation = computeRidgeOrientation(grayImage, 16);
     orientationViz = visualizeOrientation(grayImage, orientation);
     
@@ -43,12 +61,12 @@ try
     
     skeletonImage = ridgeThinning(binaryImage);
     
-    % Finalne przetwarzanie
+    % FINALNE przetwarzanie
     finalImage = skeletonImage & mask;
     finalImage = bwmorph(finalImage, 'clean');
     finalCoverage = sum(finalImage(:)) / numel(finalImage) * 100;
     
-    % Wizualizacja 9 kroków
+    % WIZUALIZACJA 9 kroków
     figure('Visible', 'off', 'Position', [0, 0, 1800, 1200]);
     
     subplot(3, 3, 1); imshow(originalImage);
@@ -80,7 +98,7 @@ try
     
     sgtitle(sprintf('PIPELINE PREPROCESSING - %s', upper(fingerName)), 'FontSize', 16, 'FontWeight', 'bold');
     
-    % Zapisz
+    % ZAPISZ
     savePath = fullfile(outputDir, 'preprocessing_pipeline.png');
     print(gcf, savePath, '-dpng', '-r300');
     close(gcf);
@@ -94,7 +112,18 @@ end
 end
 
 function [originalImage, fingerName] = findExampleImage(config)
-% Znajdź pierwszy dostępny obraz do demonstracji
+% FINDEXAMPLEIMAGE Znajdź pierwszy dostępny obraz do demonstracji
+%
+% Przeszukuje strukturę katalogów danych w poszukiwaniu pierwszego
+% dostępnego obrazu odcisku palca do użycia w demonstracji pipeline.
+% Sprawdza wszystkie typy palców w różnych formatach nazewnictwa.
+%
+% Parametry wejściowe:
+%   config - struktura konfiguracyjna z ścieżkami danych
+%
+% Dane wyjściowe:
+%   originalImage - znaleziony obraz lub [] jeśli brak
+%   fingerName - nazwa palca odpowiadająca znalezionemu obrazowi
 
 originalImage = [];
 fingerName = '';
@@ -103,6 +132,8 @@ fingerFolders = {'kciuk', 'wskazujący', 'środkowy', 'serdeczny', 'mały'};
 
 for i = 1:length(fingerFolders)
     currentFolder = fingerFolders{i};
+    
+    % RÓŻNE możliwe ścieżki (wielkie/małe litery, różne struktury)
     possiblePaths = {
         fullfile(dataDir, currentFolder, upper(config.imageFormat)),
         fullfile(dataDir, currentFolder, lower(config.imageFormat)),
@@ -124,21 +155,32 @@ end
 end
 
 function orientationViz = visualizeOrientation(image, orientation)
-% Wizualizuje orientację jako linie na obrazie
+% VISUALIZEORIENTATION Wizualizuje orientację jako linie na obrazie
+%
+% Nakłada na obraz kolorowe linie pokazujące kierunki orientacji
+% linii papilarnych w regularnej siatce punktów. Każda linia
+% reprezentuje lokalną orientację obliczoną dla danego regionu.
+%
+% Parametry wejściowe:
+%   image - obraz wejściowy w odcieniach szarości
+%   orientation - macierz orientacji [radiany]
+%
+% Dane wyjściowe:
+%   orientationViz - obraz RGB z nałożonymi liniami orientacji
 
-orientationViz = repmat(image, [1, 1, 3]); % RGB
+orientationViz = repmat(image, [1, 1, 3]); % RGB conversion
 [rows, cols] = size(image);
 
-% Narysuj linie orientacji
-step = 20;
-lineLength = 10;
+% RYSUJ linie orientacji
+step = 20;      % Odstęp między liniami
+lineLength = 10; % Długość linii orientacji
 
 for i = step:step:rows-step
     for j = step:step:cols-step
         if i <= rows && j <= cols
             angle = orientation(i, j);
             
-            % Oblicz końce linii
+            % OBLICZ końce linii
             dx = lineLength * cos(angle);
             dy = lineLength * sin(angle);
             
@@ -147,7 +189,7 @@ for i = step:step:rows-step
             x2 = max(1, min(cols, round(j + dx/2)));
             y2 = max(1, min(rows, round(i + dy/2)));
             
-            % Narysuj czerwoną linię
+            % RYSUJ czerwoną linię
             try
                 orientationViz = insertShape(orientationViz, 'Line', [x1, y1, x2, y2], ...
                     'Color', 'red', 'LineWidth', 2);
@@ -161,9 +203,26 @@ end
 end
 
 function frequencyViz = visualizeFrequency(frequency)
-% Wizualizuje częstotliwość jako mapę ciepła
+% VISUALIZEFREQUENCY Wizualizuje częstotliwość jako mapę ciepła
+%
+% Konwertuje macierz częstotliwości linii papilarnych na znormalizowaną
+% mapę cieplną przydatną do wizualizacji z kolorową skalą.
+%
+% Parametry wejściowe:
+%   frequency - macierz częstotliwości linii papilarnych
+%
+% Dane wyjściowe:
+%   frequencyViz - znormalizowana mapa częstotliwości [0,1]
 
 frequencyViz = frequency;
-% Normalizuj do zakresu [0,1]
-frequencyViz = (frequencyViz - min(frequencyViz(:))) / (max(frequencyViz(:)) - min(frequencyViz(:)));
+
+% NORMALIZUJ do zakresu [0,1]
+minFreq = min(frequencyViz(:));
+maxFreq = max(frequencyViz(:));
+
+if maxFreq > minFreq
+    frequencyViz = (frequencyViz - minFreq) / (maxFreq - minFreq);
+else
+    frequencyViz = zeros(size(frequencyViz)); % Zabezpieczenie gdy wszystkie wartości równe
+end
 end

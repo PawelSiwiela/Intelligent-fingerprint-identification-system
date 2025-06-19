@@ -1,28 +1,46 @@
 function [trainData, valData, testData] = splitDataset(features, labels, metadata, splitRatio)
-% SPLITDATASET Równomierny podział stratified na train/val/test
+% SPLITDATASET Stratyfikowany podział zbioru cech na train/val/test z stałą liczbą próbek
 %
-% Args:
-%   features - macierz cech [samples x features]
-%   labels - etykiety klas [samples x 1]
-%   metadata - metadane z nazwami palców
-%   splitRatio - [train_count, val_count, test_count] LICZBA PRÓBEK per klasa
+% Funkcja wykonuje stratyfikowany podział macierzy cech na zbiory treningowy,
+% walidacyjny i testowy, zapewniając równomierną reprezentację każdej klasy.
+% Używa stałej liczby próbek per klasa zamiast proporcji procentowych dla
+% lepszej kontroli nad balansowaniem małych zbiorów danych.
 %
-% Returns:
-%   trainData, valData, testData - struktury z polami: features, labels, indices
+% Parametry wejściowe:
+%   features - macierz cech [samples × features] (output feature extraction)
+%   labels - wektor etykiet klas [samples × 1] (ID palców)
+%   metadata - struktura metadanych z nazwami palców (metadata.fingerNames)
+%   splitRatio - [train_count, val_count, test_count] liczba próbek per klasa
+%                domyślnie: [7, 3, 4] = 7 train + 3 val + 4 test per klasa
+%
+% Parametry wyjściowe:
+%   trainData - struktura: {features, labels, indices}
+%   valData - struktura: {features, labels, indices}
+%   testData - struktura: {features, labels, indices}
+%
+% Algorytm:
+%   1. Wykrywanie i konwersja proporcji na stałe liczby jeśli potrzeba
+%   2. Analiza dostępności próbek per klasa
+%   3. Stratyfikowany podział z adaptacyjnym dostosowaniem dla małych klas
+%   4. Randomizacja kolejności w każdym zbiorze
+%   5. Weryfikacja balansu klas i raportowanie statystyk
+%
+% Przykład użycia:
+%   [train, val, test] = splitDataset(featureMatrix, labels, metadata, [9,2,3]);
 
 if nargin < 4
-    % STAŁA LICZBA PRÓBEK per klasa zamiast proporcji
+    % Domyślne stałe liczby próbek per klasa - sprawdzone empirycznie
     splitRatio = [7, 3, 4]; % Train: 7, Val: 3, Test: 4 próbek per klasa
 end
 
 fprintf('\n🔄 Creating stratified dataset split...\n');
 
-% Sprawdź czy to są liczby próbek czy proporcje
+% Wykrywanie formatu splitRatio i konwersja jeśli to proporcje
 if all(splitRatio <= 1) && abs(sum(splitRatio) - 1) < 0.1
-    % To są proporcje - konwertuj na liczby próbek
+    % Wykryto format proporcjonalny - konwertuj na stałe liczby
     fprintf('⚠️  Converting proportions to fixed counts...\n');
     
-    % Znajdź minimalną liczbę próbek per klasa
+    % Znajdź minimalną liczbę próbek per klasa jako ograniczenie górne
     uniqueLabels = unique(labels);
     minSamplesPerClass = inf;
     for i = 1:length(uniqueLabels)
@@ -30,21 +48,21 @@ if all(splitRatio <= 1) && abs(sum(splitRatio) - 1) < 0.1
         minSamplesPerClass = min(minSamplesPerClass, classCount);
     end
     
-    % Konwertuj proporcje na liczby
+    % Konwertuj proporcje na liczby z buforem bezpieczeństwa
     totalSamples = round(minSamplesPerClass * 0.9); % 90% dostępnych próbek
     splitCounts = round(splitRatio * totalSamples);
     
-    % Upewnij się że suma nie przekracza dostępnych próbek
+    % Walidacja - upewnij się że suma nie przekracza dostępnych próbek
     if sum(splitCounts) > minSamplesPerClass
         fprintf('⚠️  Adjusting counts to fit available samples...\n');
-        splitCounts = [4, 2, 2]; % Fallback
+        splitCounts = [4, 2, 2]; % Konserwatywny fallback
     end
     
     splitRatio = splitCounts;
     fprintf('🔧 Using fixed counts: Train=%d, Val=%d, Test=%d per class\n', ...
         splitRatio(1), splitRatio(2), splitRatio(3));
 else
-    % To już są liczby próbek
+    % Format już zawiera stałe liczby próbek
     fprintf('📊 Using fixed counts: Train=%d, Val=%d, Test=%d per class\n', ...
         splitRatio(1), splitRatio(2), splitRatio(3));
 end
@@ -61,7 +79,7 @@ trainIndices = [];
 valIndices = [];
 testIndices = [];
 
-% Sprawdź czy każda klasa ma wystarczająco próbek
+% Analiza dostępności próbek - sprawdź czy każda klasa ma wystarczająco danych
 fprintf('\n🔍 Checking class sample availability:\n');
 for i = 1:numClasses
     classLabel = uniqueLabels(i);
@@ -76,37 +94,38 @@ for i = 1:numClasses
     end
 end
 
-% STAŁY PODZIAŁ dla każdej klasy
+% Stratyfikowany podział z stałą liczbą próbek per klasa
 fprintf('\n📦 Splitting with fixed counts per class:\n');
 for i = 1:numClasses
     classLabel = uniqueLabels(i);
     classIndices = find(labels == classLabel);
     numSamples = length(classIndices);
     
-    % Przetasuj indeksy klasy
+    % Randomizacja kolejności indeksów klasy
     classIndices = classIndices(randperm(numSamples));
     
-    % STAŁA LICZBA próbek per split
+    % Określ liczbę próbek dla każdego zbioru z ograniczeniem dostępności
     currentTrainCount = min(trainCount, numSamples);
     currentValCount = min(valCount, max(0, numSamples - currentTrainCount));
     currentTestCount = min(testCount, max(0, numSamples - currentTrainCount - currentValCount));
     
-    % Jeśli za mało próbek, dostosuj proporcjonalnie
+    % Adaptacyjne dostosowanie dla bardzo małych klas
     if numSamples < totalNeededPerClass
         totalAvailable = numSamples;
         ratio = [trainCount, valCount, testCount] / totalNeededPerClass;
         
+        % Proporcjonalne skalowanie z minimum 1 próbka gdzie możliwe
         currentTrainCount = max(1, round(totalAvailable * ratio(1)));
         currentValCount = max(1, round(totalAvailable * ratio(2)));
         currentTestCount = max(0, totalAvailable - currentTrainCount - currentValCount);
         
-        % Upewnij się że nie przekraczamy dostępnych próbek
+        % Kontrola spójności - nie przekraczaj dostępnych próbek
         if currentTrainCount + currentValCount + currentTestCount > totalAvailable
             currentTestCount = totalAvailable - currentTrainCount - currentValCount;
         end
     end
     
-    % Podziel indeksy
+    % Przypisanie indeksów do odpowiednich zbiorów
     if currentTrainCount > 0
         trainIndices = [trainIndices; classIndices(1:currentTrainCount)];
     end
@@ -128,12 +147,12 @@ for i = 1:numClasses
         fingerName, numSamples, currentTrainCount, currentValCount, currentTestCount);
 end
 
-% Przetasuj finalne indeksy
+% Finalna randomizacja kolejności w każdym zbiorze
 trainIndices = trainIndices(randperm(length(trainIndices)));
 valIndices = valIndices(randperm(length(valIndices)));
 testIndices = testIndices(randperm(length(testIndices)));
 
-% Utwórz struktury danych
+% Tworzenie struktur danych wyjściowych
 trainData = struct();
 trainData.features = features(trainIndices, :);
 trainData.labels = labels(trainIndices);
@@ -149,14 +168,14 @@ testData.features = features(testIndices, :);
 testData.labels = labels(testIndices);
 testData.indices = testIndices;
 
-% Podsumowanie
+% Raportowanie statystyk końcowych
 fprintf('\n📊 Final dataset sizes:\n');
 fprintf('  Training:   %d samples\n', length(trainIndices));
 fprintf('  Validation: %d samples\n', length(valIndices));
 fprintf('  Testing:    %d samples\n', length(testIndices));
 fprintf('  Total:      %d samples\n', length(labels));
 
-% Sprawdź balans klas
+% Weryfikacja balansu klas w końcowych zbiorach
 fprintf('\n🎯 Final class distribution:\n');
 for i = 1:numClasses
     fingerName = metadata.fingerNames{uniqueLabels(i)};

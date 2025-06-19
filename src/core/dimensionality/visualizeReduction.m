@@ -1,32 +1,58 @@
 function visualizeReduction(originalFeatures, reducedFeatures, reductionInfo, labels, metadata, outputDir)
-% VISUALIZEREDUCTION Wizualizuj efekt redukcji wymiarowości - NAPRAWIONA
+% VISUALIZEREDUCTION Wizualizuje efekty redukcji wymiarowości cech
+%
+% Funkcja generuje kompleksową wizualizację procesu redukcji wymiarowości,
+% porównując cechy oryginalne z zredukowanymi. Tworzy wykresy przedstawiające
+% zmianę liczby wymiarów oraz analizę komponentów dla różnych metod redukcji
+% (PCA, MDA). Wyniki zapisywane są jako pliki PNG dla dokumentacji.
+%
+% Parametry wejściowe:
+%   originalFeatures - macierz oryginalnych cech [samples × original_dims]
+%   reducedFeatures - macierz zredukowanych cech [samples × reduced_dims]
+%   reductionInfo - struktura z informacjami o redukcji (method, explained, eigenValues)
+%   labels - etykiety klas dla próbek [samples × 1]
+%   metadata - metadane z nazwami klas
+%   outputDir - katalog wyjściowy dla wykresów (domyślnie: 'output/figures')
+%
+% Generowane wykresy:
+%   1. Porównanie wymiarowości (słupki przed/po redukcji + % redukcji)
+%   2. Analiza komponentów (explained variance dla PCA, eigenvalues dla MDA)
+%
+% Obsługiwane metody redukcji:
+%   - PCA: wykresy explained variance (indywidualnej i kumulatywnej)
+%   - MDA: wykresy eigenvalues i separability score
+%   - NONE: placeholder dla brak redukcji
+%
+% Przykład użycia:
+%   visualizeReduction(origFeats, redFeats, reductionInfo, labels, meta);
 
 if nargin < 6
     outputDir = 'output/figures';
 end
 
-% DODANE: Sprawdź czy outputDir istnieje
+% Zapewnienie istnienia katalogu wyjściowego
 if ~exist(outputDir, 'dir')
     mkdir(outputDir);
 end
 
-% POPRAWKA: Większa figura z poprawnym layoutem 1x2
+% Utworzenie figury z optymalnym layoutem 1x2
 figure('Position', [100, 100, 1400, 600]);
 
-%% SUBPLOT 1: Porównanie wymiarowości
-subplot(1, 2, 1);  % POPRAWKA: 1x2 layout zamiast 2x3
+%% SUBPLOT 1: Porównanie wymiarowości - wizualizacja efektu redukcji
+subplot(1, 2, 1);
 
-% POPRAWKA: Bezpieczne sprawdzanie pól
+% Bezpieczne pobranie informacji o wymiarach z fallback
 if isfield(reductionInfo, 'originalDims') && isfield(reductionInfo, 'reducedDims')
     dims = [reductionInfo.originalDims, reductionInfo.reducedDims];
 else
-    % FALLBACK: oblicz z danych
+    % Fallback - oblicz bezpośrednio z macierzy cech
     dims = [size(originalFeatures, 2), size(reducedFeatures, 2)];
 end
 
 labels_dims = {'Original', 'Reduced'};
-colors = [0.8, 0.2, 0.2; 0.2, 0.8, 0.2];
+colors = [0.8, 0.2, 0.2; 0.2, 0.8, 0.2]; % Czerwony vs Zielony
 
+% Wykres słupkowy z kolorami
 b = bar(dims);
 b.FaceColor = 'flat';
 b.CData = colors;
@@ -35,14 +61,14 @@ set(gca, 'XTickLabel', labels_dims);
 ylabel('Number of Features');
 title('Dimensionality Reduction', 'FontWeight', 'bold');
 
-% Dodaj wartości na słupkach
+% Dodanie wartości liczbowych na słupkach
 for i = 1:length(dims)
     text(i, dims(i)/2, sprintf('%d', dims(i)), ...
         'HorizontalAlignment', 'center', 'FontWeight', 'bold', ...
         'Color', 'white', 'FontSize', 12);
 end
 
-% Dodaj procent redukcji
+% Obliczenie i wyświetlenie procentu redukcji
 reduction_pct = (1 - dims(2)/dims(1)) * 100;
 text(1.5, max(dims)*0.8, sprintf('%.1f%% reduction', reduction_pct), ...
     'HorizontalAlignment', 'center', 'FontWeight', 'bold', ...
@@ -50,10 +76,10 @@ text(1.5, max(dims)*0.8, sprintf('%.1f%% reduction', reduction_pct), ...
 
 grid on;
 
-%% SUBPLOT 2: Explained Variance/Separability Analysis - TYLKO MDA I PCA
-subplot(1, 2, 2);  % POPRAWKA: 1x2 layout zamiast 2x3
+%% SUBPLOT 2: Analiza komponentów - specyficzna dla metody redukcji
+subplot(1, 2, 2);
 
-% POPRAWKA: Sprawdź metodę bezpiecznie
+% Bezpieczne pobranie nazwy metody z fallback
 methodName = 'unknown';
 if isfield(reductionInfo, 'method')
     methodName = lower(reductionInfo.method);
@@ -65,11 +91,12 @@ try
             plotMDADiscriminantAnalysis(reductionInfo);
             
         case 'pca'
-            % POPRAWKA: Sprawdź czy explained istnieje
+            % Analiza explained variance dla PCA
             if isfield(reductionInfo, 'explained') && ~isempty(reductionInfo.explained)
                 explained = reductionInfo.explained;
                 cumExplained = cumsum(explained);
                 
+                % Wykres z podwójną osią Y
                 yyaxis left
                 bar(1:length(explained), explained, 'FaceColor', [0.3, 0.6, 0.9]);
                 ylabel('Individual Variance %', 'Color', [0.3, 0.6, 0.9]);
@@ -84,7 +111,7 @@ try
                 title('PCA Variance Explained', 'FontWeight', 'bold');
                 grid on;
             else
-                % FALLBACK dla PCA bez explained
+                % Fallback dla PCA bez danych explained variance
                 text(0.5, 0.5, 'PCA analysis data not available', ...
                     'HorizontalAlignment', 'center', 'FontSize', 12);
                 title('PCA Analysis', 'FontWeight', 'bold');
@@ -92,30 +119,32 @@ try
             end
             
         case 'none'
+            % Placeholder dla braku redukcji wymiarowości
             text(0.5, 0.5, 'No dimensionality reduction applied', ...
                 'HorizontalAlignment', 'center', 'FontSize', 12);
             title('Original Features', 'FontWeight', 'bold');
             axis off;
             
         otherwise
+            % Obsługa nieznanych metod redukcji
             text(0.5, 0.5, sprintf('Analysis for %s not available', upper(methodName)), ...
                 'HorizontalAlignment', 'center', 'FontSize', 12);
             title('Component Analysis', 'FontWeight', 'bold');
             axis off;
     end
 catch ME
-    % FALLBACK jeśli cokolwiek się nie uda
+    % Uniwersalny fallback dla błędów w analizie komponentów
     text(0.5, 0.5, sprintf('Analysis failed: %s', ME.message), ...
         'HorizontalAlignment', 'center', 'FontSize', 10);
     title('Component Analysis', 'FontWeight', 'bold');
     axis off;
 end
 
-% TYTUŁ GŁÓWNY
+% Główny tytuł figury
 sgtitle(sprintf('Dimensionality Reduction Analysis (%s)', upper(methodName)), ...
     'FontSize', 16, 'FontWeight', 'bold');
 
-% ZAPISZ
+% Zapisanie wykresu z obsługą błędów
 try
     saveas(gcf, fullfile(outputDir, 'dimensionality_reduction_analysis.png'));
     close(gcf);
@@ -126,16 +155,19 @@ catch ME
 end
 end
 
-%% HELPER FUNCTIONS - POPRAWIONE
+%% FUNKCJE POMOCNICZE
 
 function plotMDADiscriminantAnalysis(reductionInfo)
-% PLOTMDADISCRIMINANTANALYSIS - BEZPIECZNA WERSJA
+% PLOTMDADISCRIMINANTANALYSIS Wizualizuje wyniki analizy dyskryminacyjnej MDA
+%
+% Funkcja tworzy wykres eigenvalues z MDA oraz separability score jeśli dostępny.
+% Zapewnia bezpieczną obsługę brakujących lub nieprawidłowych danych.
 
 try
     if isfield(reductionInfo, 'eigenValues') && ~isempty(reductionInfo.eigenValues)
         eigenValues = reductionInfo.eigenValues;
         
-        % Upewnij się że eigenValues to liczby dodatnie
+        % Sanityzacja eigenvalues - usuń wartości niedodatnie
         eigenValues = abs(eigenValues);
         eigenValues = eigenValues(eigenValues > 0);
         
@@ -146,7 +178,7 @@ try
             title('MDA Discriminant Analysis', 'FontWeight', 'bold');
             grid on;
             
-            % Dodaj wartości na słupkach
+            % Dodanie wartości na słupkach dla lepszej czytelności
             for i = 1:length(eigenValues)
                 if eigenValues(i) > 0
                     text(i, eigenValues(i)/2, sprintf('%.2f', eigenValues(i)), ...
@@ -154,7 +186,7 @@ try
                 end
             end
             
-            % Separability score jeśli dostępny
+            % Wyświetlenie separability score jeśli dostępny
             if isfield(reductionInfo, 'separabilityScore') && ~isempty(reductionInfo.separabilityScore)
                 text(length(eigenValues)/2, max(eigenValues)*0.8, ...
                     sprintf('Separability: %.3f', reductionInfo.separabilityScore), ...
@@ -172,6 +204,7 @@ try
         axis off;
     end
 catch ME
+    % Fallback dla błędów w analizie MDA
     text(0.5, 0.5, sprintf('MDA analysis failed: %s', ME.message), 'HorizontalAlignment', 'center');
     title('MDA Analysis - Error', 'FontWeight', 'bold');
     axis off;
@@ -179,7 +212,12 @@ end
 end
 
 function cmap = redblue(n)
-% REDBLUE Niebiesko-biało-czerwona mapa kolorów
+% REDBLUE Tworzy niebiesko-biało-czerwoną mapę kolorów
+%
+% Funkcja pomocnicza generująca kolormap przydatną do wizualizacji
+% różnic lub korelacji. Niebieski = wartości ujemne, Biały = zero,
+% Czerwony = wartości dodatnie.
+
 if nargin < 1, n = 256; end
 if n == 1, cmap = [1 1 1]; return; end
 

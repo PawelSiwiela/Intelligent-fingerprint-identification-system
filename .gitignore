@@ -38,16 +38,16 @@ Thumbs.db
 *~
 *.bak
 
-
-# Zbiór danych 
+# Zbiór danych i dane wrażliwe
 # =========================================================================
+# Oryginalne dane biometryczne (odciski palców)
 /data/
 
-# Cały folder output - wszystkie generowane pliki
+# Wygenerowane pliki output - wszystkie generowane pliki
 # =========================================================================
 output/
 
-# Zachowaj strukturę folderów (puste .gitkeep)
+# WYJĄTKI: Zachowaj strukturę folderów (puste .gitkeep)
 # =========================================================================
 !output/.gitkeep
 !output/logs/.gitkeep
@@ -56,6 +56,38 @@ output/
 !output/anonymized_data/.gitkeep
 !/data/.gitkeep
 
-# Ignoruj pliki PDF i DOCX
+# Dane anonimowe - bezpieczne do udostępniania ale duże pliki
+# =========================================================================
+# Anonimowe pliki .mat (szkielety, cechy, minucje)
+output/anonymized_data/*.mat
+# README z danymi anonimowymi można zachować
+!output/anonymized_data/README_ANONYMIZED_DATA.txt
+
+# Modele wytrenowane - duże pliki
+# =========================================================================
+output/models/*.mat
+output/models/*.h5
+
+# Wizualizacje - można zachować małe pliki PNG
+# =========================================================================
+# output/figures/*.png  # Odkomentuj jeśli chcesz ignorować wizualizacje
+
+# Logi - czasami przydatne do debugowania
+# =========================================================================
+output/logs/*.log
+output/logs/*.txt
+
+# Dokumenty i raporty
+# =========================================================================
 *.pdf
 *.docx
+*.doc
+*.pptx
+*.ppt
+
+# Pliki tymczasowe i cache
+# =========================================================================
+*.tmp
+*.temp
+cache/
+temp/
