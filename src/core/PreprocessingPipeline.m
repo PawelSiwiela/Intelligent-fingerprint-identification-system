@@ -118,106 +118,134 @@ try
     fprintf('📊 Success rate: %d/%d (%.1f%%)\n', successCount, numImages, successRate);
     
     %% KROK 3: DETEKCJA I FILTRACJA MINUCJI
-    % Wykrywanie punktów charakterystycznych z kontrolą jakości
-    
+    % Systematyczne wykrywanie i filtracja punktów charakterystycznych
     fprintf('\n🔍 STEP 3/7: Minutiae detection and filtering...\n');
-    fprintf('      Detection: Crossing Number Analysis (CN=1→endpoint, CN=3→bifurcation)\n');
-    fprintf('      Filtering: Quality threshold, border exclusion, spatial clustering\n');
     
-    % Inicjalizacja struktur wynikowych dla minucji
-    allMinutiae = cell(size(preprocessedImages));
-    allFeatures = [];
-    validImageIndices = [];
+    % INICJALIZACJA STRUKTUR WYNIKOWYCH
+    allMinutiae = cell(numImages, 1);      % Przechowuje minucje dla każdego obrazu
+    allFeatures = [];                      % Macierz cech [samples × features]
+    validImageIndices = [];                % Indeksy udanych obrazów
+    validMinutiaeCount = 0;                % Licznik udanych ekstrakcji
+    minutiaeStartTime = tic;               % Timer dla tego etapu
     
-    fprintf('Processing minutiae for %d preprocessed images:\n', numImages);
+    fprintf('Processing %d images for minutiae detection:\n', numImages);
     
-    % PĘTLA DETEKCJI MINUCJI Z PROGRESS TRACKING
-    minutiaeStartTime = tic;
-    validMinutiaeCount = 0;
-    
+    % PĘTLA DETEKCJI MINUCJI Z OBSŁUGĄ BŁĘDÓW PER-OBRAZ
     for i = 1:numImages
-        % Progress indicator
+        % Progress indicator co 10% lub dla pierwszego obrazu
         if mod(i, max(1, floor(numImages/10))) == 0 || i == 1
             fprintf('  📊 Progress: %d/%d (%.1f%%) - Processing minutiae\n', i, numImages, (i/numImages)*100);
         end
         
-        % Pomiń obrazy które nie zostały pomyślnie przetworzone
+        % Pomiń obrazy które nie przeszły preprocessingu
         if isempty(preprocessedImages{i})
             continue;
         end
         
         try
-            % ETAP 3A: DETEKCJA MINUCJI
-            % Crossing Number Analysis w sąsiedztwie 8-pikselowym
+            %% SUB-ETAP 3A: DETEKCJA MINUCJI
+            % Wykrywanie kandydatów na punkty charakterystyczne
             [minutiae, qualityMap] = detectMinutiae(preprocessedImages{i}, config, logFile);
             
-            if isempty(minutiae) || ~isfield(minutiae, 'endpoints') || ~isfield(minutiae, 'bifurcations')
-                logWarning(sprintf('No valid minutiae detected for image %d', i), logFile);
+            % Walidacja podstawowa - sprawdź czy wykryto jakieś minucje
+            if isempty(minutiae) || size(minutiae, 1) == 0
+                logWarning(sprintf('No minutiae detected for image %d', i), logFile);
                 continue;
             end
             
-            % Sprawdź czy wykryto przynajmniej kilka minucji
-            totalMinutiae = size(minutiae.endpoints, 1) + size(minutiae.bifurcations, 1);
-            if totalMinutiae < 3
-                logWarning(sprintf('Too few minutiae (%d) detected for image %d', totalMinutiae, i), logFile);
+            % Sprawdź minimalną liczbę minucji dla sensownej analizy
+            if size(minutiae, 1) < 3
+                logWarning(sprintf('Too few minutiae (%d) detected for image %d', size(minutiae, 1), i), logFile);
                 continue;
             end
             
-            % ETAP 3B: FILTRACJA MINUCJI
-            % Eliminacja fałszywych detekcji według kryteriów jakości
+            %% SUB-ETAP 3B: FILTRACJA MINUCJI
+            % Eliminacja fałszywych detekcji i ranking jakości
             filteredMinutiae = filterMinutiae(minutiae, config, logFile);
             
-            if isempty(filteredMinutiae) || ~isfield(filteredMinutiae, 'endpoints') || ~isfield(filteredMinutiae, 'bifurcations')
+            % Walidacja po filtracji
+            if isempty(filteredMinutiae) || size(filteredMinutiae, 1) == 0
                 logWarning(sprintf('No minutiae remained after filtering for image %d', i), logFile);
                 continue;
             end
             
-            % Sprawdź czy po filtracji pozostały użyteczne minucje
-            filteredTotal = size(filteredMinutiae.endpoints, 1) + size(filteredMinutiae.bifurcations, 1);
-            if filteredTotal < 2
-                logWarning(sprintf('Too few minutiae (%d) after filtering for image %d', filteredTotal, i), logFile);
+            % Sprawdź czy zostały wystarczające minucje po filtracji
+            if size(filteredMinutiae, 1) < 2
+                logWarning(sprintf('Too few minutiae (%d) after filtering for image %d', size(filteredMinutiae, 1), i), logFile);
                 continue;
             end
             
-            % ETAP 3C: EKSTRAKCJA CECH RELACYJNYCH
-            % Generowanie deskryptorów na podstawie relacji przestrzennych między minucjami
+            %% SUB-ETAP 3C: EKSTRAKCJA CECH
+            % Generowanie deskryptorów numerycznych z minucji
             features = extractMinutiaeFeatures(filteredMinutiae, config, logFile);
             
-            if isempty(features) || size(features, 2) == 0
+            % Walidacja cech
+            if isempty(features) || length(features) == 0
                 logWarning(sprintf('Feature extraction failed for image %d', i), logFile);
                 continue;
             end
             
-            % ETAP 3D: WIZUALIZACJA PIERWSZEGO OBRAZU (diagnostyka)
-            % Zapisuje etapy processingu dla pierwszego udanego obrazu
+            % Sprawdź wymiarowość cech (powinno być ~55 cech)
+            if length(features) < 10
+                logWarning(sprintf('Feature vector too short (%d) for image %d', length(features), i), logFile);
+                continue;
+            end
+            
+            %% SUB-ETAP 3D: WIZUALIZACJA (tylko dla pierwszego udanego obrazu)
             if validMinutiaeCount == 0 && config.visualization.enabled
                 try
-                    fprintf('  📊 Creating processing visualization for sample image...\n');
+                    fprintf('      🎨 Creating processing visualization for sample image...\n');
                     visualizeProcessingSteps(imageData{i}, preprocessedImages{i}, ...
                         filteredMinutiae, i, config.visualization.outputDir);
-                    logInfo('Sample processing visualization created', logFile);
                 catch vizME
-                    logWarning(sprintf('Visualization creation failed: %s', vizME.message), logFile);
+                    logWarning(sprintf('Visualization failed: %s', vizME.message), logFile);
                 end
             end
             
-            % ZAPISZ WYNIKI UDANEGO PRZETWARZANIA
+            %% SUB-ETAP 3E: ZAPISYWANIE WYNIKÓW
+            % Przechowaj udane rezultaty
             allMinutiae{i} = filteredMinutiae;
-            allFeatures(end+1, :) = features; % Dodaj wiersz cech
-            validImageIndices(end+1) = i;     % Zapisz indeks oryginalnego obrazu
+            
+            % Inicjalizuj macierz cech jeśli to pierwszy udany obraz
+            if isempty(allFeatures)
+                allFeatures = zeros(0, length(features));
+            end
+            
+            % Dodaj cechy do macierzy wyników
+            allFeatures(end+1, :) = features;
+            validImageIndices(end+1) = i;
             validMinutiaeCount = validMinutiaeCount + 1;
             
         catch ME
-            % IZOLACJA BŁĘDU DETEKCJI MINUCJI
+            % IZOLACJA BŁĘDU - jeden obraz nie przerywa całego procesu
             logError(sprintf('Minutiae processing failed for image %d: %s', i, ME.message), logFile);
+            continue;
         end
     end
     
+    % PODSUMOWANIE ETAPU MINUCJI
     minutiaeTime = toc(minutiaeStartTime);
     
     fprintf('✅ Minutiae processing completed in %.1f seconds\n', minutiaeTime);
     fprintf('📊 Valid results: %d/%d images (%.1f%%)\n', ...
         validMinutiaeCount, numImages, (validMinutiaeCount/numImages)*100);
+    
+    % Szczegółowe statystyki minucji
+    if validMinutiaeCount > 0
+        totalMinutiae = 0;
+        for i = 1:length(allMinutiae)
+            if ~isempty(allMinutiae{i})
+                totalMinutiae = totalMinutiae + size(allMinutiae{i}, 1);
+            end
+        end
+        avgMinutiaePerImage = totalMinutiae / validMinutiaeCount;
+        fprintf('🔍 Total minutiae detected: %d (avg %.1f per image)\n', totalMinutiae, avgMinutiaePerImage);
+        
+        logInfo(sprintf('Minutiae detection completed: %d valid images, %d total minutiae, %.1f avg per image', ...
+            validMinutiaeCount, totalMinutiae, avgMinutiaePerImage), logFile);
+    else
+        logError('No valid minutiae extracted from any image', logFile);
+    end
     
     %% KROK 4: WALIDACJA WYNIKÓW I KONTROLA JAKOŚCI
     % Sprawdzenie integralności danych przed normalizacją
