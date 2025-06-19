@@ -38,26 +38,28 @@ Comprehensive biometric system implementing complete fingerprint identification 
 ## 📁 Project Structure
 
 ```
-fingerprint-identification/
+Intelligent-fingerprint-identification-system/
 ├── main.m                      # Entry point - run this file
 ├── src/                        # Source code
 │   ├── App.m                   # Main application with CLI interface
 │   ├── loadConfig.m            # Global system configuration
 │   ├── core/                   # Main processing pipelines
 │   │   ├── PreprocessingPipeline.m    # Image preprocessing pipeline
-│   │   ├── MLPipeline.m              # Machine learning pipeline
-│   │   ├── data/                     # Data loading and validation
-│   │   ├── dimensionality/           # Dimensionality reduction (PCA, MDA)
-│   │   └── network/                  # ML models and evaluation
+│   │   ├── MLPipeline.m               # Machine learning pipeline
+│   │   ├── data/                      # Data loading and validation
+│   │   ├── dimensionality/            # Dimensionality reduction (PCA, MDA)
+│   │   └── network/                   # ML models and evaluation
 │   ├── image/                  # Image processing
-│   │   ├── preprocessing/            # Preprocessing (Gabor, binarization)
-│   │   ├── minutiae/                # Minutiae detection and filtering
-│   │   └── visualizations/          # Process and feature visualizations
+│   │   ├── preprocessing/             # Preprocessing (Gabor, binarization)
+│   │   ├── minutiae/                  # Minutiae detection and filtering
+│   │   └── visualizations/            # Process and feature visualizations
 │   └── utils/                  # Utility tools
-│       ├── saveProcessedData.m      # Anonymous data export
-│       ├── loadProcessedData.m      # Preprocessed data import
-│       ├── normalizeFeatures.m     # ML feature normalization
-│       └── logging/                 # Logging system
+│       ├── measureIdentificationSpeed.m # Benchmarking model performance
+│       ├── normalizeFeatures.m          # ML feature normalization
+│       ├── data/                        # Data handling utilities
+│       │   ├── saveProcessedData.m      # Anonymous data export
+│       │   └── loadProcessedData.m      # Preprocessed data import
+│       └── logging/                     # Logging system
 ├── data/                       # Input data directory (ignored)
 │   ├── thumb/                  # Thumb images
 │   ├── index/                  # Index finger images
