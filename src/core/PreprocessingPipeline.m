@@ -99,8 +99,8 @@ try
                 continue;
             end
             
-            % 4. WIZUALIZACJA (dla pierwszych 5 obrazów)
-            if i <= 5 && config.visualization.enabled
+            % 4. WIZUALIZACJA (tylko dla PIERWSZEGO obrazu)
+            if i == 1 && config.visualization.enabled
                 visualizeProcessingSteps(imageData{i}, preprocessedImages{i}, ...
                     filteredMinutiae, i, config.visualization.outputDir);
             end
