@@ -1,106 +1,90 @@
 function gaborFiltered = applyGaborFilter(image, orientation, frequency)
 % APPLYGABORFILTER Stosuje filtrację Gabora dostosowaną do orientacji i częstotliwości
 %
-% Funkcja wykonuje filtrację Gabora na obrazie odcisku palca, wykorzystując
-% lokalnie estymowane parametry orientacji i częstotliwości linii papilarnych.
-% Filtry Gabora są szczególnie skuteczne w wzmacnianiu struktur liniowych
-% o znanej orientacji i częstotliwości.
+% Argumenty:
+%   image - obraz po obliczeniu orientacji
+%   orientation - mapa orientacji linii papilarnych
+%   frequency - mapa częstotliwości linii papilarnych
 %
-% Parametry wejściowe:
-%   image - obraz po obliczeniu orientacji (macierz 2D w skali szarości)
-%   orientation - mapa orientacji linii papilarnych (macierz 2D w radianach)
-%   frequency - mapa częstotliwości linii papilarnych (macierz 2D w cyklach/piksel)
-%
-% Parametry wyjściowe:
-%   gaborFiltered - obraz po filtracji Gabora (macierz 2D)
-%
-% Algorytm:
-%   1. Przetwarzanie blokowe (16x16 pikseli)
-%   2. Dla każdego bloku: utworzenie spersonalizowanego jądra Gabora
-%   3. Parametry jądra: orientacja i częstotliwość lokalne, σx=σy=4
-%   4. Konwolucja bloku z odpowiednim jądrem Gabora
-%
-% Przykład użycia:
-%   filteredImg = applyGaborFilter(image, orientMap, freqMap);
+% Output:
+%   gaborFiltered - obraz po filtracji Gabora
 
 [rows, cols] = size(image);
 gaborFiltered = zeros(rows, cols);
-blockSize = 16;  % Rozmiar bloku dla lokalnej filtracji
+blockSize = 16;
 
-% Stałe parametry obwiedni Gaussowskiej filtra Gabora
-sigma_x = 4;  % Szerokość obwiedni w kierunku X
-sigma_y = 4;  % Szerokość obwiedni w kierunku Y
+% Zmodyfikowane parametry Gabora dla lepszej separacji linii
+sigma_x = 4.0;
+sigma_y = 2.5;  % Zmniejszone dla lepszej separacji między liniami
 
-% Przetwarzanie blokowe - każdy blok ma własny filtr Gabora
+% Wstępne wzmocnienie kontrastu
+enhancedImage = adapthisteq(image, 'ClipLimit', 0.01);
+
 for i = blockSize:blockSize:rows-blockSize+1
     for j = blockSize:blockSize:cols-blockSize+1
-        % Wyznaczenie granic aktualnego bloku
+        % Granice bloku
         r1 = max(1, i-blockSize+1);
         r2 = min(rows, i);
         c1 = max(1, j-blockSize+1);
         c2 = min(cols, j);
         
-        % Wyodrębnienie bloku obrazu oraz lokalnych parametrów
-        block = image(r1:r2, c1:c2);
-        orient = orientation(i, j);    % Lokalna orientacja linii
-        freq = frequency(i, j);        % Lokalna częstotliwość linii
+        % Wyodrębnij parametry
+        block = enhancedImage(r1:r2, c1:c2);  % Używamy wzmocnionego obrazu
+        orient = orientation(i, j);
+        freq = frequency(i, j);
         
-        % Utworzenie i zastosowanie filtra Gabora dla aktualnego bloku
+        % Korekta niepoprawnej częstotliwości
+        if freq < 0.05 || freq > 0.15
+            freq = 0.1;  % Bezpieczna wartość
+        end
+        
+        % Utwórz i zastosuj filtr Gabora
         try
-            % Generowanie jądra Gabora dostosowanego do lokalnych parametrów
             gaborKernel = createSimpleGaborKernel(size(block), orient, freq, sigma_x, sigma_y);
-            
-            % Konwolucja bloku z jądrem Gabora
             filteredBlock = imfilter(block, gaborKernel, 'replicate');
+            
+            % Nie wzmacniamy kontrastu po filtracji - zostawiamy naturalną strukturę
+            
             gaborFiltered(r1:r2, c1:c2) = filteredBlock;
         catch
-            % Mechanizm awaryjny - przepisz oryginalny blok bez filtracji
+            % Fallback - przepisz oryginalny blok
             gaborFiltered(r1:r2, c1:c2) = block;
         end
     end
 end
+
+% Delikatne wygładzenie zamiast wzmocnienia kontrastu
+gaborFiltered = imgaussfilt(gaborFiltered, 0.5);
 end
 
 function kernel = createSimpleGaborKernel(blockSize, theta, frequency, sigma_x, sigma_y)
-% CREATESIMPLEGABORKERNEL Tworzy jądro filtra Gabora o zadanych parametrach
+% CREATESIMPLEGABORKERNEL Tworzy jądro filtra Gabora
 %
-% Funkcja pomocnicza generująca 2D jądro filtra Gabora jako iloczyn
-% obwiedni Gaussowskiej i fali sinusoidalnej o określonej orientacji
-% i częstotliwości.
-%
-% Parametry wejściowe:
-%   blockSize - rozmiar jądra [wysokość, szerokość] w pikselach
-%   theta - orientacja fali sinusoidalnej w radianach
-%   frequency - częstotliwość fali nośnej w cyklach/piksel
-%   sigma_x, sigma_y - parametry obwiedni Gaussowskiej (szerokość)
-%
-% Parametry wyjściowe:
-%   kernel - znormalizowane jądro filtra Gabora (macierz 2D)
+% Argumenty:
+%   blockSize - rozmiar bloku [h, w]
+%   theta - orientacja w radianach
+%   frequency - częstotliwość fali nośnej
+%   sigma_x, sigma_y - parametry Gaussowskiej obwiedni
 
 [h, w] = deal(blockSize(1), blockSize(2));
 [x, y] = meshgrid(1:w, 1:h);
 
-% Przesunięcie układu współrzędnych do środka jądra
+% Środek układu współrzędnych
 x = x - (w+1)/2;
 y = y - (h+1)/2;
 
-% Obrót układu współrzędnych zgodnie z orientacją linii papilarnych
+% Obrót układu współrzędnych
 x_rot = x * cos(theta) + y * sin(theta);
 y_rot = -x * sin(theta) + y * cos(theta);
 
-% Utworzenie filtra Gabora jako iloczyn dwóch składników:
-% 1. Obwiednia Gaussowska - zapewnia lokalizację przestrzenną
+% Filtr Gabora = Gaussian * sinusoid
 gaussian = exp(-(x_rot.^2/(2*sigma_x^2) + y_rot.^2/(2*sigma_y^2)));
-
-% 2. Fala sinusoidalna - selektuje określoną częstotliwość
 sinusoid = cos(2*pi*frequency*x_rot);
-
-% Końcowe jądro Gabora
 kernel = gaussian .* sinusoid;
 
-% Normalizacja jądra - zero mean i jednostkowa energia
-kernel = kernel - mean(kernel(:));  % Usunięcie składowej stałej
+% Normalizacja - zero mean
+kernel = kernel - mean(kernel(:));
 if sum(kernel(:).^2) > 0
-    kernel = kernel / sqrt(sum(kernel(:).^2));  % Normalizacja energii
+    kernel = kernel / sqrt(sum(kernel(:).^2));
 end
 end

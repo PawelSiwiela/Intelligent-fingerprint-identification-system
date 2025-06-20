@@ -1,62 +1,44 @@
 function [segmentedImage, mask] = segmentFingerprint(image)
-% SEGMENTFINGERPRINT Wydziela obszar odcisku palca od tła obrazu
+% SEGMENTFINGERPRINT Segmentuje obszar odcisku od tła
 %
-% Funkcja segmentuje obraz odcisku palca, oddzielając obszar zawierający
-% linie papilarne od tła. Wykorzystuje analizę lokalnej wariancji oraz
-% operacje morfologiczne do utworzenia precyzyjnej maski segmentacji.
+% Argumenty:
+%   image - obraz po filtracji Gabora
 %
-% Parametry wejściowe:
-%   image - obraz po filtracji Gabora (macierz 2D, skala szarości)
-%
-% Parametry wyjściowe:
-%   segmentedImage - obraz z wyzerowanym tłem (obszar poza odciskiem = 0)
-%   mask - maska logiczna obszaru odcisku (true = odcisk, false = tło)
-%
-% Algorytm:
-%   1. Analiza lokalnej wariancji w oknach 15x15 pikseli
-%   2. Progowanie adaptacyjne oparte na graythresh
-%   3. Operacje morfologiczne: opening, closing, wypełnianie dziur
-%   4. Wybór największego komponentu spójnego
-%
-% Przykład użycia:
-%   [segmentedImg, mask] = segmentFingerprint(gaborFilteredImage);
+% Output:
+%   segmentedImage - obraz z wyzerowanym tłem
+%   mask - maska obszaru odcisku
 
 try
-    % Konwersja do typu double jeśli potrzebna
     if ~isa(image, 'double')
         image = im2double(image);
     end
     
     [rows, cols] = size(image);
     
-    % Obsługa małych obrazów - przyjmij pełną maskę
+    % Dla małych obrazów - pełna maska
     if rows < 32 || cols < 32
         mask = true(size(image));
         segmentedImage = image;
         return;
     end
     
-    % Segmentacja oparta na lokalnej wariancji tekstury
-    % Użyj standardowego odchylenia w oknie 15x15 jako miary tekstury
+    % Segmentacja na podstawie lokalnej wariancji
     localVar = stdfilt(image, ones(15,15)).^2;
-    threshold = graythresh(localVar) * 0.3;  % Zredukowany próg dla lepszej detekcji
+    threshold = graythresh(localVar) * 0.3;
     mask = localVar > threshold;
     
-    % Mechanizm fallback jeśli segmentacja nie udała się
+    % Fallback jeśli maska za mała
     if sum(mask(:)) < 0.05 * numel(mask)
         mask = image > graythresh(image) * 0.5;
     end
     
-    % Operacje morfologiczne dla wygładzenia i oczyszczenia maski
+    % Operacje morfologiczne
     if sum(mask(:)) > 100
-        % Opening - usuwa małe obiekty i wygładza kontury
         mask = imopen(mask, strel('disk', 2));
-        % Closing - wypełnia małe dziury i łączy blisko siebie obiekty
         mask = imclose(mask, strel('disk', 3));
-        % Wypełnianie dziur wewnątrz obiektów
         mask = imfill(mask, 'holes');
         
-        % Wybierz największy komponent spójny (główny obszar odcisku)
+        % Wybierz największy komponent
         cc = bwconncomp(mask);
         if cc.NumObjects > 1
             areas = cellfun(@length, cc.PixelIdxList);
@@ -67,12 +49,12 @@ try
         end
     end
     
-    % Zastosuj maskę - wyzeruj piksele poza obszarem odcisku
+    % Zastosuj maskę
     segmentedImage = image;
     segmentedImage(~mask) = 0;
     
 catch
-    % Mechanizm awaryjny - zwróć pełną maskę i oryginalny obraz
+    % Fallback
     mask = true(size(image));
     segmentedImage = image;
 end
