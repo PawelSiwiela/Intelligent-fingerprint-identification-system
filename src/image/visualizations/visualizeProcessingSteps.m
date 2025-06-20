@@ -227,12 +227,12 @@ try
             if type == 1 % Ending (punkt końcowy linii)
                 markerColor = 'red';
                 markerShape = 'o';
-                markerSize = 2;
+                markerSize = 1;
                 endingCount = endingCount + 1;
             else % Bifurcation (rozwidlenie linii)
                 markerColor = 'blue';
                 markerShape = 'o';
-                markerSize = 2;
+                markerSize = 1;
                 bifurcationCount = bifurcationCount + 1;
             end
             
