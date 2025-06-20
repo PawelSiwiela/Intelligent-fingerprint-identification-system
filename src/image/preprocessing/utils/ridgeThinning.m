@@ -1,46 +1,59 @@
 function skeletonImage = ridgeThinning(binaryImage)
-% RIDGETHINNING Szkieletyzacja linii papilarnych
+% RIDGETHINNING Szkieletyzacja linii papilarnych z zachowaniem struktury
 %
-% Argumenty:
-%   binaryImage - obraz binarny po binaryzacji
+% Funkcja przeprowadza zaawansowaną szkieletyzację linii papilarnych
+% z automatyczną kontrolą jakości i systemem fallback dla trudnych przypadków.
+% Celem jest uzyskanie linii o grubości 1 piksela przy zachowaniu
+% topologii i ciągłości struktur.
 %
-% Output:
-%   skeletonImage - szkielet linii papilarnych
+% Parametry wejściowe:
+%   binaryImage - obraz binarny po binaryzacji (logical)
+%
+% Parametry wyjściowe:
+%   skeletonImage - szkielet linii papilarnych (logical)
 
 try
-    % Przygotowanie obrazu przed szkieletyzacją
-    binaryImage = bwareaopen(binaryImage, 10);  % Usunięcie małych artefaktów
+    % PREPROCESSING: Przygotowanie obrazu przed szkieletyzacją
+    binaryImage = bwareaopen(binaryImage, 10);      % Usunięcie małych artefaktów
     binaryImage = imclose(binaryImage, strel('disk', 1));  % Zamknięcie małych przerw
-    binaryImage = imfill(binaryImage, 'holes');  % Wypełnienie dziur
+    binaryImage = imfill(binaryImage, 'holes');      % Wypełnienie dziur w liniach
     
-    % KROK 1: PEŁNA SZKIELETYZACJA dla linii 1-pikselowych
-    skeletonImage = bwmorph(binaryImage, 'thin', Inf);  % Pełna szkieletyzacja
+    % KROK 1: PEŁNA SZKIELETYZACJA - algorytm iteracyjny Zhang-Suen
+    % Redukuje wszystkie linie do grubości 1 piksela
+    skeletonImage = bwmorph(binaryImage, 'thin', Inf);
     
-    % KROK 2: Podstawowe czyszczenie szkieletu
-    skeletonImage = bwareaopen(skeletonImage, 5);  % Usuń bardzo małe fragmenty
+    % KROK 2: PODSTAWOWE CZYSZCZENIE szkieletu
+    % Usunięcie bardzo małych, izolowanych fragmentów
+    skeletonImage = bwareaopen(skeletonImage, 5);
     
-    % KROK 3: Sprawdź czy szkielet nie jest pusty lub zbyt rzadki
+    % KROK 3: KONTROLA JAKOŚCI SZKIELETYZACJI
+    % Sprawdzenie czy szkielet nie jest zbyt rzadki (błąd przetwarzania)
     coverage = sum(skeletonImage(:)) / numel(skeletonImage) * 100;
     
     if coverage < 0.1
-        % Próbujemy delikatniejszą szkieletyzację
+        % FALLBACK 1: Szkieletyzacja z ograniczeniem długości gałęzi
+        % Bardziej konserwatywne podejście
         skeletonImage = bwskel(binaryImage, 'MinBranchLength', 3);
         
         if sum(skeletonImage(:)) / numel(skeletonImage) * 100 < 0.05
-            % Ostatnia szansa - szkieletyzacja z limitem iteracji
+            % FALLBACK 2: Szkieletyzacja z limitem iteracji
+            % Najłagodniejsze podejście - ograniczona liczba iteracji
             skeletonImage = bwmorph(binaryImage, 'thin', 5);
         end
     end
     
 catch ME
-    % Fallback
+    % FALLBACK W PRZYPADKU BŁĘDU: Hierarchia metod zapasowych
     try
+        % Próba 1: Standardowa szkieletyzacja MATLAB
         skeletonImage = bwskel(binaryImage);
     catch
+        % Próba 2: Podstawowa morfologiczna szkieletyzacja
         skeletonImage = bwmorph(binaryImage, 'thin', 3);
     end
 end
 
-% Końcowe czyszczenie (tylko usunięcie izolowanych punktów)
+% KOŃCOWE CZYSZCZENIE: Usunięcie izolowanych punktów
+% Operacja 'clean' usuwa pojedyncze piksele bez sąsiadów
 skeletonImage = bwmorph(skeletonImage, 'clean');
 end

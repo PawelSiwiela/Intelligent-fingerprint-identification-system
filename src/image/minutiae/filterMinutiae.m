@@ -1,46 +1,61 @@
 function filteredMinutiae = filterMinutiae(minutiae, config, logFile)
-% FILTERMINUTIAE Filtruje minucje według jakości i innych kryteriów
+% FILTERMINUTIAE Filtrowanie minucji według jakości i limitów liczbowych
 %
-% Argumenty:
-%   minutiae - wykryte minucje [x, y, angle, type, quality]
-%   config - struktura konfiguracyjna
-%   logFile - plik logów (opcjonalny)
+% Funkcja przeprowadza wieloetapowe filtrowanie wykrytych minucji w celu
+% usunięcia punktów o niskiej jakości i ograniczenia ich liczby do
+% optymalnej wartości dla dalszego przetwarzania. Zachowuje najlepsze
+% minucje według wskaźnika jakości.
 %
-% Output:
-%   filteredMinutiae - odfiltrowane minucje
+% Parametry wejściowe:
+%   minutiae - macierz minucji [x, y, angle, type, quality]
+%   config - struktura konfiguracyjna z parametrami filtrowania
+%   logFile - uchwyt pliku logów (opcjonalny)
+%
+% Parametry wyjściowe:
+%   filteredMinutiae - odfiltrowana macierz minucji o wysokiej jakości
 
 if nargin < 3, logFile = []; end
 
 try
+    % SPRAWDZENIE DANYCH WEJŚCIOWYCH
     if isempty(minutiae)
-        logWarning('No minutiae to filter', logFile);
+        logWarning('No minutiae to filter - empty input matrix', logFile);
         filteredMinutiae = [];
         return;
     end
     
-    logInfo(sprintf('Filtering %d minutiae...', size(minutiae, 1)), logFile);
+    logInfo(sprintf('Starting minutiae filtering process: %d initial minutiae', size(minutiae, 1)), logFile);
     
-    % Parametry z konfiguracji
-    qualityThresh = config.minutiae.filtering.qualityThreshold;
-    maxMinutiae = config.minutiae.filtering.maxMinutiae;
+    % POBRANIE PARAMETRÓW FILTROWANIA z konfiguracji
+    qualityThresh = config.minutiae.filtering.qualityThreshold;  % Minimalny próg jakości (np. 0.3)
+    maxMinutiae = config.minutiae.filtering.maxMinutiae;         % Maksymalna liczba minucji (np. 100)
     
-    % Filtruj według jakości
+    % KROK 1: FILTROWANIE WEDŁUG JAKOŚCI
+    % Usuwa minucje o jakości poniżej progu - eliminuje artefakty i błędne detekcje
     qualityMask = minutiae(:, 5) >= qualityThresh;
     filteredMinutiae = minutiae(qualityMask, :);
     
-    logInfo(sprintf('After quality filtering: %d minutiae', size(filteredMinutiae, 1)), logFile);
+    logInfo(sprintf('After quality filtering (threshold %.2f): %d minutiae remaining', ...
+        qualityThresh, size(filteredMinutiae, 1)), logFile);
     
-    % Ogranicz liczbę minucji (zachowaj najlepsze)
+    % KROK 2: OGRANICZENIE LICZBY MINUCJI
+    % Zachowuje tylko najlepsze minucje jeśli ich liczba przekracza limit
     if size(filteredMinutiae, 1) > maxMinutiae
+        % Sortowanie malejące według jakości (kolumna 5)
         [~, sortIdx] = sort(filteredMinutiae(:, 5), 'descend');
+        % Wybór top N najlepszych minucji
         filteredMinutiae = filteredMinutiae(sortIdx(1:maxMinutiae), :);
-        logInfo(sprintf('Limited to top %d minutiae', maxMinutiae), logFile);
+        logInfo(sprintf('Limited to top %d highest quality minutiae', maxMinutiae), logFile);
     end
     
-    logSuccess(sprintf('Final minutiae count: %d', size(filteredMinutiae, 1)), logFile);
+    % PODSUMOWANIE WYNIKÓW FILTROWANIA
+    reductionPercent = (1 - size(filteredMinutiae, 1) / size(minutiae, 1)) * 100;
+    logSuccess(sprintf('Filtering completed: %d final minutiae (%.1f%% reduction)', ...
+        size(filteredMinutiae, 1), reductionPercent), logFile);
     
 catch ME
-    logError(sprintf('Minutiae filtering error: %s', ME.message), logFile);
+    % OBSŁUGA BŁĘDÓW - logowanie szczegółów i zwrócenie pustego wyniku
+    logError(sprintf('Minutiae filtering failed: %s', ME.message), logFile);
     filteredMinutiae = [];
 end
 end
