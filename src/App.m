@@ -101,6 +101,12 @@ try
         % Symulacja validImageIndices dla kompatybilności z ML Pipeline
         validImageIndices = 1:length(labels);
         
+        % Sprawdź czy allMinutiae jest puste i utwórz fallback
+        if isempty(allMinutiae)
+            fprintf('⚠️  No minutiae data in .mat file - creating empty structure\n');
+            allMinutiae = cell(length(labels), 1); % Pusta struktura komórek
+        end
+        
         % Dodatkowa normalizacja jeśli dane nie są w zakresie [0,1]
         if max(normalizedFeatures(:)) > 1 || min(normalizedFeatures(:)) < 0
             fprintf('🔧 Re-normalizing loaded features to [0,1] range...\n');
@@ -120,7 +126,7 @@ try
         % DELEGACJA DO MODUŁU PREPROCESSING PIPELINE
         % Wykonuje pełny 6-etapowy preprocessing: orientacja → częstotliwość →
         % → Gabor → segmentacja → binaryzacja → szkieletyzacja
-        [normalizedFeatures, labels, metadata, preprocessedImages, validImageIndices] = ...
+        [normalizedFeatures, labels, metadata, preprocessedImages, validImageIndices, allMinutiae] = ...
             PreprocessingPipeline(selectedFormat, config, logFile);
         
         % Walidacja wyników preprocessingu
@@ -133,7 +139,7 @@ try
         
         %% OPCJONALNY ZAPIS DANYCH ANONIMOWYCH
         % Umożliwia eksport preprocessowanych danych bez informacji biometrycznych
-        offerDataSaving(preprocessedImages, [], normalizedFeatures, validImageIndices, labels, metadata, logFile);
+        offerDataSaving(preprocessedImages, allMinutiae, normalizedFeatures, validImageIndices, labels, metadata, logFile);
     end
     
     %% KROK 4: MACHINE LEARNING PIPELINE

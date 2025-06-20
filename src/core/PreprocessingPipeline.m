@@ -1,4 +1,4 @@
-function [normalizedFeatures, validLabels, metadata, preprocessedImages, validImageIndices] = PreprocessingPipeline(selectedFormat, config, logFile)
+function [normalizedFeatures, validLabels, metadata, preprocessedImages, validImageIndices, allMinutiae] = PreprocessingPipeline(selectedFormat, config, logFile)
 % PREPROCESSINGPIPELINE Kompletny 6-etapowy pipeline preprocessingu odcisków palców
 %
 % Funkcja implementuje zaawansowany workflow przetwarzania obrazów odcisków palców

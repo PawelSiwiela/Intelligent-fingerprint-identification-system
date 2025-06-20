@@ -31,7 +31,14 @@ try
         % KOMPLETNY dataset - wszystkie dane w jednym pliku
         data = loadedData.completeDataset;
         images = data.preprocessedImages;
-        minutiae = data.minutiae;
+        
+        % BEZPIECZNE ładowanie minutiae
+        if isfield(data, 'minutiae') && ~isempty(data.minutiae)
+            minutiae = data.minutiae;
+        else
+            minutiae = cell(length(data.labels), 1); % Pusta struktura
+        end
+        
         features = data.features;
         labels = data.labels;
         metadata = data.metadata;
@@ -40,7 +47,7 @@ try
         % TYLKO przeprocesowane obrazy
         data = loadedData.processedData;
         images = data.images;
-        minutiae = [];
+        minutiae = cell(length(data.labels), 1); % Brak minutiae w tym typie pliku
         features = [];
         labels = data.labels;
         metadata = data.metadata;
@@ -49,7 +56,7 @@ try
         % TYLKO cechy numeryczne
         data = loadedData.featuresData;
         images = [];
-        minutiae = [];
+        minutiae = cell(length(data.labels), 1); % Brak minutiae w tym typie pliku
         features = data.features;
         labels = data.labels;
         metadata = data.metadata;

@@ -54,32 +54,71 @@ fprintf('   Contains %d skeleton images (no original biometric data)\n', length(
 %% 2. ZAPISZ MINUCJE (punkty charakterystyczne)
 fprintf('\n💾 Saving detected minutiae...\n');
 
-minutiaeData = struct();
-minutiaeData.minutiae = allMinutiae(validImageIndices); % Tylko prawidłowe
-minutiaeData.labels = labels(validImageIndices);
-minutiaeData.imageIndices = validImageIndices;
-minutiaeData.metadata = metadata;
-minutiaeData.timestamp = timestamp;
-minutiaeData.description = 'Extracted minutiae points [x, y, angle, type, quality] - ANONYMIZED DATA';
-
-% STATYSTYKI minucji
-totalMinutiae = 0;
-for i = 1:length(minutiaeData.minutiae)
-    if ~isempty(minutiaeData.minutiae{i})
-        totalMinutiae = totalMinutiae + size(minutiaeData.minutiae{i}, 1);
+% SPRAWDŹ czy allMinutiae nie jest puste i ma odpowiednią strukturę
+if isempty(allMinutiae)
+    fprintf('⚠️  No minutiae data available - creating empty structure\n');
+    minutiaeData = struct();
+    minutiaeData.minutiae = cell(length(validImageIndices), 1); % Puste komórki
+    minutiaeData.labels = labels(validImageIndices);
+    minutiaeData.imageIndices = validImageIndices;
+    minutiaeData.metadata = metadata;
+    minutiaeData.timestamp = timestamp;
+    minutiaeData.description = 'Empty minutiae structure - minutiae extraction may have failed';
+    
+    minutiaeData.statistics = struct();
+    minutiaeData.statistics.totalMinutiae = 0;
+    minutiaeData.statistics.averagePerImage = 0;
+else
+    % BEZPIECZNE indeksowanie - sprawdź rozmiar allMinutiae
+    if length(allMinutiae) < max(validImageIndices)
+        fprintf('⚠️  Warning: allMinutiae array size mismatch. Creating safe subset...\n');
+        % Utwórz bezpieczną strukturę
+        safeMinutiae = cell(length(validImageIndices), 1);
+        for i = 1:length(validImageIndices)
+            idx = validImageIndices(i);
+            if idx <= length(allMinutiae) && ~isempty(allMinutiae{idx})
+                safeMinutiae{i} = allMinutiae{idx};
+            else
+                safeMinutiae{i} = []; % Pusta komórka dla brakujących danych
+            end
+        end
+        minutiaeData.minutiae = safeMinutiae;
+    else
+        minutiaeData.minutiae = allMinutiae(validImageIndices); % Tylko prawidłowe
     end
-end
+    
+    minutiaeData.labels = labels(validImageIndices);
+    minutiaeData.imageIndices = validImageIndices;
+    minutiaeData.metadata = metadata;
+    minutiaeData.timestamp = timestamp;
+    minutiaeData.description = 'Extracted minutiae points [x, y, angle, type, quality] - ANONYMIZED DATA';
 
-minutiaeData.statistics = struct();
-minutiaeData.statistics.totalMinutiae = totalMinutiae;
-minutiaeData.statistics.averagePerImage = totalMinutiae / length(minutiaeData.minutiae);
+    % STATYSTYKI minucji
+    totalMinutiae = 0;
+    validMinutiaeCount = 0;
+    for i = 1:length(minutiaeData.minutiae)
+        if ~isempty(minutiaeData.minutiae{i})
+            totalMinutiae = totalMinutiae + size(minutiaeData.minutiae{i}, 1);
+            validMinutiaeCount = validMinutiaeCount + 1;
+        end
+    end
+
+    minutiaeData.statistics = struct();
+    minutiaeData.statistics.totalMinutiae = totalMinutiae;
+    minutiaeData.statistics.validImages = validMinutiaeCount;
+    minutiaeData.statistics.averagePerImage = totalMinutiae / max(1, validMinutiaeCount);
+end
 
 filename = sprintf('minutiae_data_%s.mat', timestamp);
 filepath = fullfile(outputDir, filename);
 save(filepath, 'minutiaeData', '-v7.3');
 
 fprintf('✅ Minutiae data saved: %s\n', filename);
-fprintf('   Contains %d minutiae points from %d images\n', totalMinutiae, length(minutiaeData.minutiae));
+if ~isempty(allMinutiae)
+    fprintf('   Contains %d minutiae points from %d valid images\n', minutiaeData.statistics.totalMinutiae, minutiaeData.statistics.validImages);
+else
+    fprintf('   Empty minutiae structure saved (extraction may have failed)\n');
+end
 
 %% 3. ZAPISZ CECHY (wektory numeryczne)
 fprintf('\n💾 Saving extracted features...\n');
