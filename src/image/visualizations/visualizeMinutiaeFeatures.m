@@ -367,117 +367,14 @@ title('ROZKŁAD LICZBY MINUCJI PER PALEC', 'FontSize', 10, 'FontWeight', 'bold')
 legend(histHandles, fingerNames, 'Location', 'best', 'FontSize', 8);
 grid on;
 
-%% SUBPLOT 2: BOX PLOT STOSUNKU E/B PER PALEC
+%% SUBPLOT 2: KORELACJA WYBRANYCH KLUCZOWYCH CECH (PRZENIESIONE Z SUBPLOT 3)
 subplot(2, 3, 2);
-
-ratioData = [];
-groupLabels = [];
-groupNames = {};
-
-% ZBIERANIE danych z zabezpieczeniami przeciw dzieleniu przez zero
-for i = 1:length(uniqueLabels)
-    fingerMask = labels == uniqueLabels(i);
-    fingerEndpoints = features(fingerMask, 28);
-    fingerBifurcations = features(fingerMask, 29);
-    
-    % ZABEZPIECZENIE: upewnij się że nie dzielimy przez zero
-    fingerRatios = fingerEndpoints ./ max(fingerBifurcations, 0.1);
-    
-    % USUŃ outliers (stosunki > 20 to prawdopodobnie błędy)
-    validRatios = fingerRatios(fingerRatios <= 20 & fingerRatios >= 0.01);
-    
-    if ~isempty(validRatios)
-        ratioData = [ratioData; validRatios(:)];
-        groupLabels = [groupLabels; repmat(i, length(validRatios), 1)];
-        groupNames{i} = fingerNames{i};
-    else
-        ratioData = [ratioData; NaN];
-        groupLabels = [groupLabels; i];
-        groupNames{i} = fingerNames{i};
-    end
-end
-
-try
-    % USUŃ grupy z samymi NaN
-    validGroups = ~isnan(ratioData);
-    if sum(validGroups) > 0
-        boxplot(ratioData(validGroups), groupLabels(validGroups), 'Labels', groupNames);
-        
-        xtickangle(45);
-        ylim([0 9]);
-        
-        ylabel('Stosunek E/B');
-        title('STOSUNEK E/B PER PALEC', 'FontSize', 9, 'FontWeight', 'bold');
-        grid on;
-    else
-        text(0.5, 0.5, 'Brak danych do wyświetlenia', 'HorizontalAlignment', 'center');
-        title('STOSUNEK E/B - Brak danych', 'FontSize', 9, 'FontWeight', 'bold');
-    end
-catch
-    % FALLBACK - wykres słupkowy gdy boxplot nie działa
-    fprintf('⚠️  Boxplot failed, using bar chart fallback\n');
-    
-    barData = [];
-    barNames = {};
-    
-    for i = 1:length(uniqueLabels)
-        fingerMask = labels == uniqueLabels(i);
-        
-        if sum(fingerMask) > 0
-            fingerEndpoints = features(fingerMask, 28);
-            fingerBifurcations = features(fingerMask, 29);
-            
-            meanEndpoints = mean(fingerEndpoints);
-            meanBifurcations = mean(fingerBifurcations);
-            
-            if meanBifurcations > 0.1
-                meanRatio = meanEndpoints / meanBifurcations;
-            else
-                meanRatio = meanEndpoints;
-            end
-            
-            barData(end+1) = meanRatio;
-            barNames{end+1} = fingerNames{i};
-        end
-    end
-    
-    if ~isempty(barData)
-        barHandles = bar(barData, 'FaceColor', 'flat');
-        
-        for i = 1:length(barData)
-            barHandles.CData(i,:) = colors(i,:);
-        end
-        
-        set(gca, 'XTick', 1:length(barNames), 'XTickLabel', barNames);
-        xtickangle(45);
-        
-        % ZWIĘKSZENIE ylim dla miejsca na etykiety
-        maxBarValue = max(barData);
-        ylim([0, maxBarValue * 1.2]);
-        
-        ylabel('Średni stosunek E/B');
-        title('ŚREDNI STOSUNEK E/B', 'FontSize', 9, 'FontWeight', 'bold');
-        grid on;
-        
-        % WARTOŚCI na słupkach
-        for i = 1:length(barData)
-            text(i, barData(i) + maxBarValue * 0.05, sprintf('%.2f', barData(i)), ...
-                'HorizontalAlignment', 'center', 'FontWeight', 'bold', 'FontSize', 8);
-        end
-    else
-        text(0.5, 0.5, 'Brak danych E/B', 'HorizontalAlignment', 'center');
-        title('STOSUNEK E/B - Brak danych', 'FontSize', 9, 'FontWeight', 'bold');
-    end
-end
-
-%% SUBPLOT 3: KORELACJA WYBRANYCH KLUCZOWYCH CECH
-subplot(2, 3, 3);
 
 % WYBÓR tylko kluczowych cech dla lepszej czytelności
 if size(features, 2) >= 32
     % REPREZENTATYWNE cechy
     selectedFeatures = [27, 28, 29, 30, 31]; % Liczba, Endpoints, Bifurcations, Jakość, CentroidX
-    selectedNames = {'Liczba', 'Endpoints', 'Bifurcations', 'Jakość', 'Stor.E/B'};
+    selectedNames = {'Liczba', 'Endpoints', 'Bifurcations', 'Jakość', 'CentroidX'};
     
     % DODANIE obliczonego stosunku E/B jako 6. cecha
     ratioFeature = features(:, 28) ./ max(features(:, 29), 0.1);
@@ -534,6 +431,115 @@ if size(features, 2) >= 32
 else
     text(0.5, 0.5, 'Brak wystarczających cech', 'HorizontalAlignment', 'center');
     title('KORELACJA - Brak cech', 'FontSize', 10, 'FontWeight', 'bold');
+end
+
+%% SUBPLOT 3: BOX PLOT STOSUNKU E/B PER PALEC (PRZENIESIONE Z SUBPLOT 2)
+subplot(2, 3, 3);
+
+ratioData = [];
+groupLabels = [];
+groupNames = {};
+
+% ZBIERANIE danych z zabezpieczeniami przeciw dzieleniu przez zero
+for i = 1:length(uniqueLabels)
+    fingerMask = labels == uniqueLabels(i);
+    fingerEndpoints = features(fingerMask, 28);
+    fingerBifurcations = features(fingerMask, 29);
+    
+    % ZABEZPIECZENIE: upewnij się że nie dzielimy przez zero
+    fingerRatios = fingerEndpoints ./ max(fingerBifurcations, 0.1);
+    
+    % USUŃ outliers (stosunki > 10 to prawdopodobnie błędy) - zmniejszony próg
+    validRatios = fingerRatios(fingerRatios <= 10 & fingerRatios >= 0.01);
+    
+    if ~isempty(validRatios)
+        ratioData = [ratioData; validRatios(:)];
+        groupLabels = [groupLabels; repmat(i, length(validRatios), 1)];
+        groupNames{i} = fingerNames{i};
+    else
+        ratioData = [ratioData; NaN];
+        groupLabels = [groupLabels; i];
+        groupNames{i} = fingerNames{i};
+    end
+end
+
+try
+    % USUŃ grupy z samymi NaN
+    validGroups = ~isnan(ratioData);
+    if sum(validGroups) > 0
+        boxplot(ratioData(validGroups), groupLabels(validGroups), 'Labels', groupNames);
+        
+        xtickangle(45);
+        
+        maxRatio = max(ratioData(validGroups));
+        minRatio = min(ratioData(validGroups));
+        ylim([max(0, minRatio - 0.5), min(6, maxRatio + 1)]); % Dynamiczny ylim z bezpiecznymi limitami
+        
+        ylabel('Stosunek E/B');
+        title('STOSUNEK E/B PER PALEC', 'FontSize', 9, 'FontWeight', 'bold');
+        grid on;
+    else
+        text(0.5, 0.5, 'Brak danych do wyświetlenia', 'HorizontalAlignment', 'center');
+        title('STOSUNEK E/B - Brak danych', 'FontSize', 9, 'FontWeight', 'bold');
+    end
+catch
+    % FALLBACK - wykres słupkowy gdy boxplot nie działa
+    fprintf('⚠️  Boxplot failed, using bar chart fallback\n');
+    
+    barData = [];
+    barNames = {};
+    
+    for i = 1:length(uniqueLabels)
+        fingerMask = labels == uniqueLabels(i);
+        
+        if sum(fingerMask) > 0
+            fingerEndpoints = features(fingerMask, 28);
+            fingerBifurcations = features(fingerMask, 29);
+            
+            meanEndpoints = mean(fingerEndpoints);
+            meanBifurcations = mean(fingerBifurcations);
+            
+            if meanBifurcations > 0.1
+                meanRatio = meanEndpoints / meanBifurcations;
+            else
+                meanRatio = meanEndpoints;
+            end
+            
+            barData(end+1) = meanRatio;
+            barNames{end+1} = fingerNames{i};
+        end
+    end
+    
+    if ~isempty(barData)
+        barHandles = bar(barData, 'FaceColor', 'flat');
+        
+        for i = 1:length(barData)
+            if i <= size(colors, 1)
+                barHandles.CData(i,:) = colors(i,:);
+            end
+        end
+        
+        set(gca, 'XTick', 1:length(barNames), 'XTickLabel', barNames);
+        xtickangle(45);
+        
+        maxBarValue = max(barData);
+        ylim([0, min(6, maxBarValue * 1.3)]); % Bezpieczny górny limit
+        
+        ylabel('Średni stosunek E/B');
+        title('ŚREDNI STOSUNEK E/B', 'FontSize', 9, 'FontWeight', 'bold');
+        grid on;
+        
+        % WARTOŚCI na słupkach
+        for i = 1:length(barData)
+            if barData(i) <= 5 % Tylko jeśli wartość jest rozsądna
+                text(i, barData(i) + maxBarValue * 0.05, sprintf('%.2f', barData(i)), ...
+                    'HorizontalAlignment', 'center', 'FontWeight', 'bold', 'FontSize', 8);
+            end
+        end
+    else
+        text(0.5, 0.5, 'Brak danych E/B', 'HorizontalAlignment', 'center');
+        title('STOSUNEK E/B - Brak danych', 'FontSize', 9, 'FontWeight', 'bold');
+    end
 end
 
 %% SUBPLOT 4: ENDPOINTS vs BIFURCATIONS PER PALEC
