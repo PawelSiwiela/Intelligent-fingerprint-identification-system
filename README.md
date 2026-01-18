@@ -298,7 +298,7 @@ App();  % Choose option 1 (preprocessed data)
 ## 📄 License
 
 Educational project - Intelligent Systems, Master's Studies  
-[University Name] - Semester I
+AGH University of Krakow - Semester I
 
 ## 📞 Contact
 
